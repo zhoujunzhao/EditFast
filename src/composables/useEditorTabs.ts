@@ -1,18 +1,33 @@
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { basename } from '@tauri-apps/api/path'
-import { writeTextFile } from '@tauri-apps/plugin-fs'
-import { open, save, message, ask } from '@tauri-apps/plugin-dialog'
+import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { writeTextFile, stat, readDir } from '@tauri-apps/plugin-fs'
+import { basename, join} from '@tauri-apps/api/path'
+import {ask, message, open, save} from '@tauri-apps/plugin-dialog'
+
+import {computed, onMounted, onUnmounted, ref} from 'vue'
+import {useI18n} from 'vue-i18n'
 import {
-  type TabItem,
-  readFileSmart,
-  writeTabTempImmediate,
   flushAllPendingWrites,
+  loadSessionFromTemp,
+  readFileSmart,
   removeTabTempFile,
+  type TabItem,
   writeSessionFile,
-  loadSessionFromTemp
+  writeTabTempImmediate
 } from '@/utils/tabCache'
-import { FileWatcherManager } from '@/utils/fileWatcher'
+
+import {FileWatcherManager} from '@/utils/fileWatcher'
+
+let unlistenSingleInstance: UnlistenFn | null = null
+
+const TEXT_EXTENSIONS = new Set([
+  'txt', 'md', 'markdown', 'json', 'jsonc', 'js', 'jsx', 'ts', 'tsx',
+  'vue', 'html', 'htm', 'css', 'scss', 'less', 'rs', 'toml', 'yaml', 'yml',
+  'xml', 'svg', 'py', 'java', 'c', 'cpp', 'h', 'hpp', 'cs', 'go', 'php',
+  'rb', 'sh', 'bat', 'ps1', 'sql', 'log', 'csv', 'ini', 'conf', 'env'
+])
+
+const IGNORE_DIRS = new Set(['node_modules', '.git', 'target', 'dist', '.idea', '.vscode'])
 
 export function useEditorTabs() {
   const { t } = useI18n()
@@ -64,7 +79,7 @@ export function useEditorTabs() {
         return
       }
 
-      const confirmed = await ask(t('dialog.reloadMessage', { title: target.title }), {
+      const confirmed = await ask(t('dialog.reloadMessage', {title: target.title}), {
         title: t('dialog.reloadTitle'),
         kind: 'warning'
       })
@@ -74,8 +89,8 @@ export function useEditorTabs() {
         await removeTabTempFile(target.id)
         await syncSession()
       }
-    })
-  }
+    }).then()
+   }
 
   let counter = 1
   const addTab = async () => {
@@ -93,6 +108,44 @@ export function useEditorTabs() {
     await cacheTabImmediately(newTab, true)
   }
 
+  // 移动标签页顺序并持久化到 session.json
+  const moveTab = async (fromIndex: number, toIndex: number) => {
+    if (
+      fromIndex === toIndex ||
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= tabs.value.length ||
+      toIndex >= tabs.value.length
+    ) {
+      return
+    }
+    const [movedItem] = tabs.value.splice(fromIndex, 1)
+    tabs.value.splice(toIndex, 0, movedItem)
+    await syncSession()
+  }
+
+  const openQueue: string[] = []
+  let isOpeningQueue = false
+
+  const enqueueFilesToOpen = async (paths: string[]) => {
+    for (const p of paths) {
+      if (p && !openQueue.includes(p)) {
+        openQueue.push(p)
+      }
+    }
+    if (isOpeningQueue) return
+
+    isOpeningQueue = true
+    try {
+      while (openQueue.length > 0) {
+        const nextPath = openQueue.shift()!
+        await openFileByPath(nextPath)
+      }
+    } finally {
+      isOpeningQueue = false
+    }
+  }
+
   onMounted(async () => {
     const cached = await loadSessionFromTemp()
     if (cached) {
@@ -103,20 +156,32 @@ export function useEditorTabs() {
     } else {
       await addTab()
     }
+
+    try {
+      const launchFiles = await invoke<string[]>('take_launch_files')
+      if (Array.isArray(launchFiles) && launchFiles.length > 0) {
+        await enqueueFilesToOpen(launchFiles)
+      }
+    } catch (e) {
+      console.error('获取启动参数文件失败:', e)
+    }
+
+    // 监听二次启动传入的文件路径数组
+    unlistenSingleInstance = await listen<string[]>('single-instance-open', async (event) => {
+      if (Array.isArray(event.payload) && event.payload.length > 0) {
+        await enqueueFilesToOpen(event.payload)
+      }
+    })
   })
 
-  onUnmounted(() => watcher.stopAll())
+  onUnmounted(() => {
+    watcher.stopAll()
+    if (unlistenSingleInstance) {
+      unlistenSingleInstance()
+    }
+  })
 
-  const openFile = async () => {
-    const selected = await open({
-      multiple: false,
-      filters: [
-        { name: t('dialog.filterText'), extensions: ['txt', 'md', 'json', 'js', 'ts', 'vue', 'html', 'css', 'rs', 'py', 'log', 'csv'] },
-        { name: t('dialog.filterAll'), extensions: ['*'] }
-      ]
-    })
-    if (!selected || typeof selected !== 'string') return
-
+  const openFileByPath = async (selected: string) => {
     const existing = tabs.value.find(item => item.filePath === selected)
     if (existing) {
       activeTab.value = existing.id
@@ -125,34 +190,53 @@ export function useEditorTabs() {
     }
 
     const fileName = await basename(selected)
-    let targetTab: TabItem
+    let tabId: string
 
     if (tabs.value.length === 1 && !tabs.value[0].filePath && !tabs.value[0].isDirty && tabs.value[0].content === '') {
-      const oldId = tabs.value[0].id
-      await removeTabTempFile(oldId)
-      targetTab = tabs.value[0]
-      Object.assign(targetTab, {
+      tabId = tabs.value[0].id
+      await removeTabTempFile(tabId)
+      Object.assign(tabs.value, {
         title: fileName, filePath: selected, content: '', isDirty: false,
         encoding: 'UTF-8', isLoading: true, loadProgress: 0
       })
     } else {
-      targetTab = {
-        id: `tab-${Date.now()}`, title: fileName, filePath: selected, content: '',
+      tabId = `tab-${Date.now()}`
+      tabs.value.push({
+        id: tabId, title: fileName, filePath: selected, content: '',
         isDirty: false, encoding: 'UTF-8', isLoading: true, loadProgress: 0
-      }
-      tabs.value.push(targetTab)
-      activeTab.value = targetTab.id
+      })
+      activeTab.value = tabId
     }
 
+    const reactiveTab = tabs.value.find(item => item.id === tabId)
+    if (!reactiveTab) return
+
     try {
-      targetTab.content = await readFileSmart(selected, (percent) => {
-        targetTab.loadProgress = percent
+      reactiveTab.content = await readFileSmart(selected, (percent) => {
+        reactiveTab.loadProgress = percent
       })
+    } catch (e) {
+      console.error('读取文件失败:', e)
     } finally {
-      targetTab.isLoading = false
-      targetTab.loadProgress = 100
+      reactiveTab.isLoading = false
+      reactiveTab.loadProgress = 100
       await syncSession()
-      bindFileWatcher(targetTab)
+      bindFileWatcher(reactiveTab)
+    }
+  }
+
+  const openFile = async () => {
+    const selected = await open({
+      multiple: true,
+      filters: [
+        { name: t('dialog.filterText'), extensions: ['txt', 'md', 'json', 'js', 'ts', 'vue', 'html', 'css', 'rs', 'py', 'log', 'csv'] },
+        { name: t('dialog.filterAll'), extensions: ['*'] }
+      ]
+    })
+    if (Array.isArray(selected) && selected.length > 0) {
+      await enqueueFilesToOpen(selected)
+    } else if (typeof selected === 'string') {
+      await enqueueFilesToOpen([selected])
     }
   }
 
@@ -250,13 +334,95 @@ export function useEditorTabs() {
     const wasClean = !currentTab.value.isDirty
     currentTab.value.content = val
     currentTab.value.isDirty = true
-    cacheTabImmediately(currentTab.value, wasClean)
+    cacheTabImmediately(currentTab.value, wasClean).then();
   }
+
+  // 递归收集文件夹下的所有文本文件
+  const collectFilesFromDir = async (dirPath: string, result: string[]) => {
+    try {
+      const entries = await readDir(dirPath)
+      for (const entry of entries) {
+        if (!entry.name) continue
+        const fullPath = await join(dirPath, entry.name)
+        if (entry.isDirectory) {
+          if (!IGNORE_DIRS.has(entry.name)) {
+            await collectFilesFromDir(fullPath, result)
+          }
+        } else if (entry.isFile) {
+          const ext = entry.name.split('.').pop()?.toLowerCase() || ''
+          if (TEXT_EXTENSIONS.has(ext) || !entry.name.includes('.')) {
+            result.push(fullPath)
+          }
+        }
+      }
+    } catch (e) {
+      console.error(`遍历文件夹失败 (${dirPath}):`, e)
+    }
+  }
+
+  // 处理从系统资源管理器拖入的文件文件夹路径列表
+  const handleDroppedPaths = async (paths: string[]) => {
+    const filesToOpen: string[] = []
+
+    for (const p of paths) {
+      try {
+        const info = await stat(p)
+        if (info.isDirectory) {
+          await collectFilesFromDir(p, filesToOpen)
+        } else if (info.isFile) {
+          filesToOpen.push(p)
+        }
+      } catch (e) {
+        console.error(`读取拖入路径信息失败 (${p}):`, e)
+      }
+    }
+
+    if (filesToOpen.length > 0) {
+      await enqueueFilesToOpen(filesToOpen)
+    }
+  }
+
+  // 批量关闭指定 ID 列表的标签（若中途用户取消保存确认框，则停止后续关闭）
+  const closeTabsBatch = async (targetIds: string[]) => {
+    for (const id of targetIds) {
+      const stillExists = tabs.value.some(t => t.id === id)
+      if (!stillExists) continue
+      await removeTab(id)
+      // 如果调用 removeTab 后该标签依然存在，说明用户在未保存弹窗里点了“取消”
+      if (tabs.value.some(t => t.id === id)) {
+        break
+      }
+    }
+  }
+
+  // 关闭除 targetId 以外的所有标签
+  const closeOtherTabs = async (targetId: string) => {
+    activeTab.value = targetId
+    const idsToClose = tabs.value.filter(t => t.id !== targetId).map(t => t.id)
+    await closeTabsBatch(idsToClose)
+  }
+
+  // 关闭 targetId 右侧的所有标签
+  const closeRightTabs = async (targetId: string) => {
+    const index = tabs.value.findIndex(t => t.id === targetId)
+    if (index === -1 || index >= tabs.value.length - 1) return
+    const idsToClose = tabs.value.slice(index + 1).map(t => t.id)
+    await closeTabsBatch(idsToClose)
+  }
+
+  // 关闭全部标签
+  const closeAllTabs = async () => {
+    const idsToClose = tabs.value.map(t => t.id)
+    await closeTabsBatch(idsToClose)
+  }
+
+
 
   return {
     tabs, activeTab, tabPosition, currentTab, hasDirtyTabs,
     syncSession, addTab, openFile, saveActiveFile, saveActiveFileAs,
     saveAllFiles, setActiveEncoding, removeTab, togglePosition,
-    handleContentChange, flushAllCaches
+    handleContentChange, flushAllCaches, handleDroppedPaths, moveTab,
+    closeOtherTabs, closeRightTabs, closeAllTabs
   }
 }

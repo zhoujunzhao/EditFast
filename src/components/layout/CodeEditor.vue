@@ -1,14 +1,30 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
 import { EditorView, basicSetup } from 'codemirror'
-import { EditorState, Compartment, type Extension } from '@codemirror/state'
+import { EditorState, Prec, type Extension } from '@codemirror/state'
+import { keymap } from '@codemirror/view'
 import { undo as cmUndo, redo as cmRedo } from '@codemirror/commands'
-import { search, openSearchPanel } from '@codemirror/search'
+import {
+  search,
+  SearchQuery,
+  setSearchQuery,
+  findNext,
+  findPrevious,
+  replaceNext,
+  replaceAll
+} from '@codemirror/search'
 import { markdown } from '@codemirror/lang-markdown'
 import { javascript } from '@codemirror/lang-javascript'
 import { json } from '@codemirror/lang-json'
 import { writeText, readText } from '@tauri-apps/plugin-clipboard-manager'
+
+export interface SearchOptions {
+  search: string
+  replace: string
+  caseSensitive: boolean
+  wholeWord: boolean
+  regexp: boolean
+}
 
 const props = defineProps<{
   modelValue: string
@@ -19,29 +35,10 @@ const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void
 }>()
 
-const { t, locale } = useI18n()
 const editorContainer = ref<HTMLElement | null>(null)
 let view: EditorView | null = null
-const phrasesCompartment = new Compartment()
 
 const LARGE_FILE_LEN = 5 * 1024 * 1024
-
-// 构建 CodeMirror 6 多语言短语对象
-const getCmPhrases = () => {
-  return EditorState.phrases.of({
-    'Find': t('cm.Find'),
-    'Replace': t('cm.Replace'),
-    'next': t('cm.next'),
-    'previous': t('cm.previous'),
-    'all': t('cm.all'),
-    'match case': t('cm.match case'),
-    'by word': t('cm.by word'),
-    'regexp': t('cm.regexp'),
-    'replace': t('cm.replace'),
-    'replace all': t('cm.replace all'),
-    'close': t('cm.close')
-  })
-}
 
 const getLanguageExtension = (name: string): Extension[] => {
   const ext = name.split('.').pop()?.toLowerCase()
@@ -57,8 +54,14 @@ const initEditor = () => {
   const isLargeFile = props.modelValue.length > LARGE_FILE_LEN
 
   const extensions: Extension[] = [
+    // 最高优先级拦截 Mod-f / Mod-h，防止弹出 CodeMirror 内置搜索栏，交给外部自定义弹窗处理
+    Prec.highest(
+        keymap.of([
+          { key: 'Mod-f', run: () => false, preventDefault: true },
+          { key: 'Mod-h', run: () => false, preventDefault: true }
+        ])
+    ),
     basicSetup,
-    phrasesCompartment.of(getCmPhrases()),
     search({ top: true }),
     ...(isLargeFile ? [] : [...getLanguageExtension(props.fileName), EditorView.lineWrapping]),
     EditorView.theme({
@@ -70,45 +73,6 @@ const initEditor = () => {
       '.cm-gutters': {
         backgroundColor: 'transparent',
         borderRight: '1px solid hsl(var(--border))'
-      },
-      '.cm-panels': {
-        backgroundColor: 'hsl(var(--muted))',
-        color: 'hsl(var(--foreground))',
-        borderBottom: '1px solid hsl(var(--border))'
-      },
-      '.cm-search': {
-        padding: '6px 10px',
-        fontSize: '12px',
-        display: 'flex',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        gap: '6px'
-      },
-      '.cm-textfield': {
-        backgroundColor: 'hsl(var(--background))',
-        color: 'hsl(var(--foreground))',
-        border: '1px solid hsl(var(--border))',
-        borderRadius: '0px',
-        padding: '2px 6px',
-        outline: 'none'
-      },
-      '.cm-button': {
-        backgroundImage: 'none',
-        backgroundColor: 'hsl(var(--background))',
-        color: 'hsl(var(--foreground))',
-        border: '1px solid hsl(var(--border))',
-        borderRadius: '0px',
-        padding: '2px 8px',
-        cursor: 'pointer'
-      },
-      '.cm-button:hover': {
-        backgroundColor: 'hsl(var(--accent))'
-      },
-      '.cm-panel.cm-search button[name="close"]': {
-        color: 'hsl(var(--muted-foreground))',
-        fontSize: '16px',
-        top: '4px',
-        right: '8px'
       }
     }),
     EditorView.updateListener.of((update) => {
@@ -129,15 +93,6 @@ const initEditor = () => {
   })
 }
 
-// 监听全局语言切换，实时刷新 CodeMirror 面板语言
-watch(locale, () => {
-  if (view) {
-    view.dispatch({
-      effects: phrasesCompartment.reconfigure(getCmPhrases())
-    })
-  }
-})
-
 onMounted(() => initEditor())
 onBeforeUnmount(() => view?.destroy())
 
@@ -156,10 +111,15 @@ watch(() => props.modelValue, (newVal) => {
 const undo = () => { if (view) { cmUndo(view); view.focus() } }
 const redo = () => { if (view) { cmRedo(view); view.focus() } }
 
+const getSelectedText = () => {
+  if (!view) return ''
+  const { from, to } = view.state.selection.main
+  return view.state.sliceDoc(from, to)
+}
+
 const copy = async () => {
   if (!view) return
-  const { from, to } = view.state.selection.main
-  const text = view.state.sliceDoc(from, to)
+  const text = getSelectedText()
   if (text) await writeText(text)
   view.focus()
 }
@@ -186,27 +146,86 @@ const paste = async () => {
   }
 }
 
-const openFind = () => {
-  if (!view) return
-  openSearchPanel(view)
-  requestAnimationFrame(() => {
-    const input = view?.dom.querySelector<HTMLInputElement>('.cm-textfield[name="search"]')
-    input?.focus()
-    input?.select()
+const syncSearchQuery = (opts: SearchOptions): { current: number; total: number } => {
+  if (!view) return { current: 0, total: 0 }
+
+  const query = new SearchQuery({
+    search: opts.search,
+    replace: opts.replace,
+    caseSensitive: opts.caseSensitive,
+    wholeWord: opts.wholeWord,
+    regexp: opts.regexp
   })
+
+  view.dispatch({ effects: setSearchQuery.of(query) })
+
+  if (!opts.search || !query.valid) {
+    return { current: 0, total: 0 }
+  }
+
+  let total = 0
+  let current = 0
+  const selFrom = view.state.selection.main.from
+  const cursor = query.getCursor(view.state)
+
+  for (let item = cursor.next(); !item.done; item = cursor.next()) {
+    total++
+    if (item.value.from <= selFrom) {
+      current = total
+    }
+    if (total >= 10000) break
+  }
+
+  return { current, total }
 }
 
-const openReplace = () => {
-  if (!view) return
-  openSearchPanel(view)
-  requestAnimationFrame(() => {
-    const input = view?.dom.querySelector<HTMLInputElement>('.cm-textfield[name="replace"]')
-    input?.focus()
-    input?.select()
-  })
+const execFindNext = (opts: SearchOptions) => {
+  if (!view) return { current: 0, total: 0 }
+  syncSearchQuery(opts)
+  findNext(view)
+  return syncSearchQuery(opts)
 }
 
-defineExpose({ undo, redo, cut, copy, paste, openFind, openReplace })
+const execFindPrev = (opts: SearchOptions) => {
+  if (!view) return { current: 0, total: 0 }
+  syncSearchQuery(opts)
+  findPrevious(view)
+  return syncSearchQuery(opts)
+}
+
+const execReplaceOne = (opts: SearchOptions) => {
+  if (!view) return { current: 0, total: 0 }
+  syncSearchQuery(opts)
+  replaceNext(view)
+  return syncSearchQuery(opts)
+}
+
+const execReplaceAll = (opts: SearchOptions) => {
+  if (!view) return { current: 0, total: 0 }
+  syncSearchQuery(opts)
+  replaceAll(view)
+  return syncSearchQuery(opts)
+}
+
+const clearSearch = () => {
+  if (!view) return
+  view.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: '' })) })
+}
+
+defineExpose({
+  undo,
+  redo,
+  cut,
+  copy,
+  paste,
+  getSelectedText,
+  syncSearchQuery,
+  execFindNext,
+  execFindPrev,
+  execReplaceOne,
+  execReplaceAll,
+  clearSearch
+})
 </script>
 
 <template>

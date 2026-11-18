@@ -1,13 +1,6 @@
-import { executableDir, join } from '@tauri-apps/api/path'
-import {
-  exists,
-  mkdir,
-  open as fsOpen,
-  stat,
-  readTextFile,
-  writeTextFile,
-  remove
-} from '@tauri-apps/plugin-fs'
+import {join} from '@tauri-apps/api/path'
+import {exists, mkdir, open as fsOpen, readTextFile, remove, stat, writeTextFile} from '@tauri-apps/plugin-fs'
+import {invoke} from '@tauri-apps/api/core'
 
 export interface TabItem {
   id: string
@@ -29,9 +22,15 @@ export interface SessionData {
 const STREAM_THRESHOLD = 100 * 1024 * 1024
 const CHUNK_SIZE = 4 * 1024 * 1024
 
+async function getConfigPath() {
+  // @ts-ignore
+  const rootPath = await invoke<string>('get_exe_dir');
+  return await join(rootPath, 'config');
+}
+
 export async function getTempDir() {
-  const exeDir = await executableDir()
-  const tempDir = await join(exeDir, 'temp')
+  const rootPath = await getConfigPath();
+  const tempDir = await join(rootPath, 'temp');
   if (!(await exists(tempDir))) {
     await mkdir(tempDir, { recursive: true })
   }
@@ -94,7 +93,7 @@ export async function readFileSmart(
 ): Promise<string> {
   const fileStat = await stat(filePath)
   const totalSize = fileStat.size
-
+debugger;
   if (totalSize <= STREAM_THRESHOLD) {
     return await readTextFile(filePath)
   }

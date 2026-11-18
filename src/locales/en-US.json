@@ -19,7 +19,18 @@
     "search": {
       "self": "Search",
       "find": "Find",
-      "replace": "Replace"
+      "replace": "Replace",
+      "findPlaceholder": "Find...",
+      "replacePlaceholder": "Replace with...",
+      "matchCase": "Match case",
+      "wholeWord": "Whole word",
+      "useRegex": "Regular expression",
+      "findNext": "Next",
+      "findPrev": "Previous",
+      "replaceOne": "Replace",
+      "replaceAll": "Replace All",
+      "matchCount": "{current} of {total}",
+      "noMatch": "No results"
     },
     "code": {
       "self": "Encoding"
@@ -28,7 +39,11 @@
       "self": "Language"
     },
     "setting": {
-      "self": "Settings"
+      "self": "Settings",
+      "winContextMenu": "Add to Windows Context Menu",
+      "winContextMenuLabel": "Open with EditFast",
+      "winContextMenuAdded": "Added to Windows context menu",
+      "winContextMenuRemoved": "Removed from Windows context menu"
     },
     "about": {
       "self": "About",
@@ -55,7 +70,12 @@
     "dockTopTip": "Move tab bar to top",
     "empty": "No open tabs",
     "newDocBtn": "+ New Document",
-    "loading": "Streaming large file... {percent}%"
+    "loading": "Streaming large file... {percent}%",
+    "dropHint": "Drop files or folders here to open",
+    "closeCurrent": "Close",
+    "closeOthers": "Close Others",
+    "closeRight": "Close to the Right",
+    "closeAll": "Close All"
   },
   "dialog": {
     "unsavedTitle": "Unsaved Changes",

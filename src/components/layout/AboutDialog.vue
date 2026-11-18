@@ -28,7 +28,7 @@ onMounted(async () => {
 
 <template>
   <Dialog v-model:open="open">
-    <DialogContent class="sm:max-w-[420px] rounded-none select-none">
+    <DialogContent class="sm:max-w-105 rounded-none select-none">
       <DialogHeader>
         <div class="flex items-center gap-3">
           <div class="flex h-10 w-10 items-center justify-center border bg-muted">

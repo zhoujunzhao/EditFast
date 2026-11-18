@@ -6,6 +6,11 @@ import {createRouter, createWebHashHistory} from "vue-router";
 
 import Main from "./Main.vue";
 
+// 全局禁用 WebView 默认右键菜单（不影响自定义 ContextMenu 组件）
+document.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+});
+
 const routes = [
   {
     path: '/',

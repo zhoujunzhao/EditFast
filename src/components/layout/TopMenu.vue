@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { message } from '@tauri-apps/plugin-dialog'
 import {
   FileIcon, FolderIcon, InfoIcon, SaveIcon, SettingsIcon,
   RedoIcon, UndoIcon, Scissors, CopyIcon, ClipboardPaste, Search, Replace,
   Minus, Square, Copy, X
 } from '@lucide/vue'
 import {
-  Menubar, MenubarContent, MenubarGroup, MenubarItem, MenubarMenu,
+  Menubar, MenubarCheckboxItem, MenubarContent, MenubarGroup, MenubarItem, MenubarMenu,
   MenubarRadioGroup, MenubarRadioItem, MenubarSeparator, MenubarShortcut, MenubarTrigger
 } from '@/components/ui/menubar'
 import { useI18n } from 'vue-i18n'
@@ -38,6 +40,10 @@ const appWindow = getCurrentWindow()
 const isMaximized = ref(false)
 let unlistenResize: (() => void) | null = null
 
+// 检测是否为 Windows 系统
+const isWindows = navigator.userAgent.toLowerCase().includes('windows')
+const hasContextMenu = ref(false)
+
 const updateMaximizedState = async () => {
   isMaximized.value = await appWindow.isMaximized()
 }
@@ -45,9 +51,34 @@ const updateMaximizedState = async () => {
 onMounted(async () => {
   await updateMaximizedState()
   unlistenResize = await appWindow.onResized(updateMaximizedState)
+
+  if (isWindows) {
+    try {
+      hasContextMenu.value = await invoke<boolean>('check_windows_context_menu')
+    } catch (e) {
+      console.error('检查右键菜单状态失败:', e)
+    }
+  }
 })
 
 onUnmounted(() => { if (unlistenResize) unlistenResize() })
+
+// 切换添加/移除 Windows 右键菜单
+const handleToggleContextMenu = async (checked: boolean) => {
+  try {
+    const res = await invoke<boolean>('toggle_windows_context_menu', {
+      enable: checked,
+      menuTitle: t('topMenu.setting.winContextMenuLabel')
+    })
+    hasContextMenu.value = res
+    await message(
+        res ? t('topMenu.setting.winContextMenuAdded') : t('topMenu.setting.winContextMenuRemoved'),
+        { title: t('topMenu.setting.self'), kind: 'info' }
+    )
+  } catch (e) {
+    console.error('设置右键菜单失败:', e)
+  }
+}
 
 const switchLang = (lang: 'zh-CN' | 'en-US') => {
   locale.value = lang
@@ -137,9 +168,18 @@ const switchLang = (lang: 'zh-CN' | 'en-US') => {
         </MenubarContent>
       </MenubarMenu>
 
+      <!-- 设置菜单：仅在 Windows 系统显示右键菜单开关 -->
       <MenubarMenu>
         <MenubarTrigger>{{ t('topMenu.setting.self') }}</MenubarTrigger>
         <MenubarContent>
+          <MenubarCheckboxItem
+              v-if="isWindows"
+              :model-value="hasContextMenu"
+              @update:model-value="handleToggleContextMenu"
+          >
+            {{ t('topMenu.setting.winContextMenu') }}
+          </MenubarCheckboxItem>
+          <MenubarSeparator v-if="isWindows" />
           <MenubarItem>
             <SettingsIcon /> {{ t('topMenu.setting.self') }}
           </MenubarItem>
