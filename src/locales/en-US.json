@@ -1,0 +1,89 @@
+{
+  "topMenu": {
+    "file": {
+      "self": "File",
+      "new": "New",
+      "open": "Open...",
+      "save": "Save",
+      "saveAs": "Save As...",
+      "saveAll": "Save All"
+    },
+    "edit": {
+      "self": "Edit",
+      "undo": "Undo",
+      "redo": "Redo",
+      "cut": "Cut",
+      "copy": "Copy",
+      "paste": "Paste"
+    },
+    "search": {
+      "self": "Search",
+      "find": "Find",
+      "replace": "Replace"
+    },
+    "code": {
+      "self": "Encoding"
+    },
+    "lang": {
+      "self": "Language"
+    },
+    "setting": {
+      "self": "Settings"
+    },
+    "about": {
+      "self": "About",
+      "title": "About EditFast",
+      "desc": "A lightweight and speedy notepad built on Tauri 2+Vue 3.",
+      "version": "Version",
+      "techStack": "Tech Stack",
+      "close": "Close"
+    }
+  },
+  "window": {
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "restore": "Restore Down",
+    "close": "Close"
+  },
+  "tabs": {
+    "untitled": "Untitled-{num}.txt",
+    "newTab": "New Tab",
+    "closeTab": "Close Tab",
+    "dockBottom": "Bottom",
+    "dockTop": "Top",
+    "dockBottomTip": "Move tab bar to bottom",
+    "dockTopTip": "Move tab bar to top",
+    "empty": "No open tabs",
+    "newDocBtn": "+ New Document",
+    "loading": "Streaming large file... {percent}%"
+  },
+  "dialog": {
+    "unsavedTitle": "Unsaved Changes",
+    "unsavedMessage": "Do you want to save changes to \"{title}\"?",
+    "save": "Save",
+    "dontSave": "Don't Save",
+    "cancel": "Cancel",
+    "filterText": "Text & Code",
+    "filterAll": "All Files"
+  },
+  "status": {
+    "draft": "Draft (Not saved locally)",
+    "dirtyCached": "Unsaved changes (Auto-cached)",
+    "saved": "Saved",
+    "ready": "Ready",
+    "chars": "Characters"
+  },
+  "cm": {
+    "Find": "Find",
+    "Replace": "Replace",
+    "next": "Next",
+    "previous": "Previous",
+    "all": "All",
+    "match case": "Match case",
+    "by word": "By word",
+    "regexp": "Regexp",
+    "replace": "Replace",
+    "replace all": "Replace all",
+    "close": "Close"
+  }
+}
