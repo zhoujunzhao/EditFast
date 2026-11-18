@@ -18,7 +18,7 @@
     "os:default",
     "fs:default",
     "fs:allow-watch",
-    "fs:allow-unwatch"
+    "fs:allow-unwatch",
     "fs:allow-read-text-file",
     "fs:allow-write-text-file",
     "fs:allow-mkdir",
