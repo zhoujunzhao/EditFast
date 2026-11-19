@@ -1,6 +1,8 @@
 use std::path::Path;
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, State};
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
 
 // 保存通过系统右键菜单首次启动时传入的所有文件路径
 struct LaunchFilesState(Mutex<Vec<String>>);
@@ -99,6 +101,46 @@ pub fn run() {
             }
         }))
         .manage(LaunchFilesState(Mutex::new(initial_files)))
+        .setup(move |app| {
+            // region 托盘
+            let quit_i = MenuItem::with_id(app, "tray-quit", "退出", true, None::<&str>).unwrap();
+            let menu = Menu::with_id_and_items(app, "tray-menu", &[&quit_i]).unwrap();
+            let _tray = TrayIconBuilder::new()
+                // 请确保你的 src-tauri/icons 目录下有对应的托盘图标（如 tray.png 或 icon.ico）
+                .icon(app.default_window_icon().unwrap().clone())
+                .show_menu_on_left_click(false)
+                .menu(&menu)
+                .tooltip("EditFast \n 无它,唯记事本耳。")
+                .on_menu_event(|app_handle, event| {
+                    match event.id.as_ref() {
+                        "tray-quit" => {
+                            if let Some(_) = app_handle.tray_by_id("tray-menu") {
+                                let _ = app_handle.remove_tray_by_id("tray-menu");
+                            }
+                            app_handle.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    match event {
+                        TrayIconEvent::DoubleClick { button, .. } => {
+                            if button == MouseButton::Left {
+                                let app = tray.app_handle();
+                                if let Some(window) = app.get_webview_window("main") {
+                                    let _ = window.show();
+                                    let _ = window.unminimize();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                })
+                .build(app)?;
+            // endregion 托盘
+            Ok(())
+        })
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())

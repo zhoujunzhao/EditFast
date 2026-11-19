@@ -35,6 +35,27 @@
     "code": {
       "self": "Encoding"
     },
+    "tools": {
+      "self": "Tools",
+      "formatJson": "Format JSON",
+      "minifyJson": "Minify JSON",
+      "invalidJson": "Current content is not valid JSON:\n{error}",
+      "base64Tool": "Base64 Encoder/Decoder...",
+      "urlTool": "URL Encoder/Decoder...",
+      "codecTitle": "Codec Utility",
+      "base64Tab": "Base64",
+      "urlTab": "URL Encode/Decode",
+      "inputPlaceholder": "Enter raw text or paste encoded string...",
+      "outputPlaceholder": "Result will appear here...",
+      "encode": "Encode →",
+      "decode": "← Decode",
+      "swap": "Swap",
+      "copyResult": "Copy Result",
+      "copied": "Copied",
+      "clear": "Clear",
+      "invalidBase64": "Base64 decode failed: invalid format",
+      "invalidUrl": "URL decode failed: malformed URI sequence"
+    },
     "lang": {
       "self": "Language"
     },

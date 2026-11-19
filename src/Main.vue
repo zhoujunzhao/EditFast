@@ -11,6 +11,11 @@ import StatusBar from '@/components/layout/StatusBar.vue'
 import AboutDialog from '@/components/layout/AboutDialog.vue'
 import FindReplaceDialog from '@/components/layout/FindReplaceDialog.vue'
 import type { SearchOptions } from '@/components/layout/CodeEditor.vue'
+import CodecDialog from '@/components/layout/CodecDialog.vue'
+
+const codecOpen = ref(false)
+const codecMode = ref<'base64' | 'url'>('base64')
+const codecInitialText = ref('')
 
 const { t } = useI18n()
 const middleEditRef = ref<InstanceType<typeof MiddleEdit> | null>(null)
@@ -23,7 +28,14 @@ const searchShowReplace = ref(false)
 const searchInitialText = ref('')
 const searchMatchStat = ref({ current: 0, total: 0 })
 
+
 const activeTabInfo = computed(() => middleEditRef.value?.currentTab ?? null)
+
+const openCodecDialog = (targetMode: 'base64' | 'url') => {
+  codecInitialText.value = middleEditRef.value?.getActiveSelectedText() || ''
+  codecMode.value = targetMode
+  codecOpen.value = true
+}
 
 // 打开自定义查找/替换弹窗
 const openFindDialog = (withReplace = false) => {
@@ -134,6 +146,8 @@ onUnmounted(() => {
           @save-file="middleEditRef?.saveActiveFile()"
           @save-as="middleEditRef?.saveActiveFileAs()"
           @change-encoding="(enc) => middleEditRef?.setActiveEncoding(enc)"
+          @format-json="middleEditRef?.formatActiveJson()"
+          @minify-json="middleEditRef?.minifyActiveJson()"
           @undo="middleEditRef?.undoActive()"
           @redo="middleEditRef?.redoActive()"
           @cut="middleEditRef?.cutActive()"
@@ -142,6 +156,7 @@ onUnmounted(() => {
           @find="openFindDialog(false)"
           @replace="openFindDialog(true)"
           @open-about="aboutOpen = true"
+          @open-codec="openCodecDialog"
       />
       <top-tool-bar
           :has-active-tab="!!activeTabInfo"
@@ -184,6 +199,12 @@ onUnmounted(() => {
         @replace-one="handleReplaceOne"
         @replace-all="handleReplaceAll"
         @close="handleSearchClose"
+    />
+
+    <codec-dialog
+        v-model:open="codecOpen"
+        v-model:mode="codecMode"
+        :initial-text="codecInitialText"
     />
 
     <about-dialog v-model:open="aboutOpen" />

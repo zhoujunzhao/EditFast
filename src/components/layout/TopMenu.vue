@@ -6,7 +6,7 @@ import { message } from '@tauri-apps/plugin-dialog'
 import {
   FileIcon, FolderIcon, InfoIcon, SaveIcon, SettingsIcon,
   RedoIcon, UndoIcon, Scissors, CopyIcon, ClipboardPaste, Search, Replace,
-  Minus, Square, Copy, X
+  Minus, Square, Copy, X, Braces, Minimize2, Binary, Link2
 } from '@lucide/vue'
 import {
   Menubar, MenubarCheckboxItem, MenubarContent, MenubarGroup, MenubarItem, MenubarMenu,
@@ -25,6 +25,9 @@ const emit = defineEmits<{
   (e: 'save-file'): void
   (e: 'save-as'): void
   (e: 'change-encoding', encoding: string): void
+  (e: 'format-json'): void
+  (e: 'minify-json'): void
+  (e: 'open-codec', mode: 'base64' | 'url'): void
   (e: 'undo'): void
   (e: 'redo'): void
   (e: 'cut'): void
@@ -155,6 +158,26 @@ const switchLang = (lang: 'zh-CN' | 'en-US') => {
             <MenubarRadioItem value="GBK">GBK</MenubarRadioItem>
             <MenubarRadioItem value="ASCII">ASCII</MenubarRadioItem>
           </MenubarRadioGroup>
+        </MenubarContent>
+      </MenubarMenu>
+
+      <!-- 工具菜单 -->
+      <MenubarMenu>
+        <MenubarTrigger>{{ t('topMenu.tools.self') }}</MenubarTrigger>
+        <MenubarContent>
+          <MenubarItem :disabled="!hasActiveTab" @click="emit('format-json')">
+            <Braces /> {{ t('topMenu.tools.formatJson') }}
+          </MenubarItem>
+          <MenubarItem :disabled="!hasActiveTab" @click="emit('minify-json')">
+            <Minimize2 /> {{ t('topMenu.tools.minifyJson') }}
+          </MenubarItem>
+          <MenubarSeparator />
+          <MenubarItem @click="emit('open-codec', 'base64')">
+            <Binary />{{ t('topMenu.tools.base64Tool') }}
+          </MenubarItem>
+          <MenubarItem @click="emit('open-codec', 'url')">
+            <Link2 />{{ t('topMenu.tools.urlTool') }}
+          </MenubarItem>
         </MenubarContent>
       </MenubarMenu>
 

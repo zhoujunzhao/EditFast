@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "edit-fast",
+        "title": "EditFast",
         "width": 1024,
         "height": 768,
         "decorations": false,

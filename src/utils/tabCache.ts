@@ -1,6 +1,15 @@
-import {join} from '@tauri-apps/api/path'
-import {exists, mkdir, open as fsOpen, readTextFile, remove, stat, writeTextFile} from '@tauri-apps/plugin-fs'
-import {invoke} from '@tauri-apps/api/core'
+import { join } from '@tauri-apps/api/path'
+import {
+  exists,
+  mkdir,
+  open as fsOpen,
+  readFile,
+  readTextFile,
+  remove,
+  stat,
+  writeTextFile
+} from '@tauri-apps/plugin-fs'
+import { invoke } from '@tauri-apps/api/core'
 
 export interface TabItem {
   id: string
@@ -9,6 +18,8 @@ export interface TabItem {
   content: string
   isDirty: boolean
   encoding: string
+  lastModified?: number | null
+  fileSize?: number | null
   isLoading?: boolean
   loadProgress?: number
 }
@@ -22,26 +33,33 @@ export interface SessionData {
 const STREAM_THRESHOLD = 100 * 1024 * 1024
 const CHUNK_SIZE = 4 * 1024 * 1024
 
-async function getConfigPath() {
-  // @ts-ignore
-  const rootPath = await invoke<string>('get_exe_dir');
-  return await join(rootPath, 'config');
-}
-
-export async function getTempDir() {
-  const rootPath = await getConfigPath();
-  const tempDir = await join(rootPath, 'temp');
-  if (!(await exists(tempDir))) {
-    await mkdir(tempDir, { recursive: true })
+export async function getConfigDir() {
+  const exeDir = await invoke<string>('get_exe_dir')
+  const configDir = await join(exeDir, 'config')
+  if (!(await exists(configDir))) {
+    await mkdir(configDir, { recursive: true })
   }
-  return tempDir
+  return configDir
 }
 
-// 串行写入队列：保证每次修改零延迟立即落盘，且连续快速打字时严格按顺序写入最新版本
+export async function getFileFingerprint(
+  filePath: string
+): Promise<{ mtime: number | null; size: number } | null> {
+  try {
+    const info = await stat(filePath)
+    const mtime = info.mtime ? new Date(info.mtime).getTime() : null
+    return { mtime, size: info.size }
+  } catch {
+    return null
+  }
+}
+
 const inFlightWrites = new Map<string, Promise<void>>()
 const pendingContents = new Map<string, string>()
+const canceledTabs = new Set<string>()
 
 export function writeTabTempImmediate(tabId: string, content: string): Promise<void> {
+  canceledTabs.delete(tabId)
   pendingContents.set(tabId, content)
 
   if (inFlightWrites.has(tabId)) {
@@ -50,11 +68,12 @@ export function writeTabTempImmediate(tabId: string, content: string): Promise<v
 
   const runQueue = (async () => {
     try {
-      const tempDir = await getTempDir()
-      const file = await join(tempDir, `${tabId}.tmp`)
+      const configDir = await getConfigDir()
+      const file = await join(configDir, `${tabId}.tmp`)
       while (pendingContents.has(tabId)) {
         const latestContent = pendingContents.get(tabId)!
         pendingContents.delete(tabId)
+        if (canceledTabs.has(tabId)) break
         await writeTextFile(file, latestContent)
       }
     } catch (e) {
@@ -68,7 +87,6 @@ export function writeTabTempImmediate(tabId: string, content: string): Promise<v
   return runQueue
 }
 
-// 等待所有正在进行的写入全部完成（关窗前调用）
 export async function flushAllPendingWrites(): Promise<void> {
   while (inFlightWrites.size > 0) {
     await Promise.allSettled(Array.from(inFlightWrites.values()))
@@ -76,14 +94,23 @@ export async function flushAllPendingWrites(): Promise<void> {
 }
 
 export async function removeTabTempFile(tabId: string) {
+  canceledTabs.add(tabId)
   pendingContents.delete(tabId)
   if (inFlightWrites.has(tabId)) {
     await inFlightWrites.get(tabId)
   }
-  const tempDir = await getTempDir()
-  const file = await join(tempDir, `${tabId}.tmp`)
+  const configDir = await getConfigDir()
+  const file = await join(configDir, `${tabId}.tmp`)
   if (await exists(file)) {
     await remove(file)
+  }
+}
+
+function decodeBytesSmart(bytes: Uint8Array): string {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+  } catch {
+    return new TextDecoder('gb18030').decode(bytes)
   }
 }
 
@@ -93,9 +120,10 @@ export async function readFileSmart(
 ): Promise<string> {
   const fileStat = await stat(filePath)
   const totalSize = fileStat.size
-debugger;
+
   if (totalSize <= STREAM_THRESHOLD) {
-    return await readTextFile(filePath)
+    const bytes = await readFile(filePath)
+    return decodeBytesSmart(bytes)
   }
 
   const fileHandle = await fsOpen(filePath, { read: true })
@@ -126,8 +154,8 @@ debugger;
 }
 
 export async function writeSessionFile(data: SessionData) {
-  const tempDir = await getTempDir()
-  const file = await join(tempDir, 'session.json')
+  const configDir = await getConfigDir()
+  const file = await join(configDir, 'config.json')
   await writeTextFile(file, JSON.stringify(data, null, 2))
 }
 
@@ -137,32 +165,57 @@ export async function loadSessionFromTemp(): Promise<{
   tabPosition: 'top' | 'bottom'
 } | null> {
   try {
-    const tempDir = await getTempDir()
-    const sessionFile = await join(tempDir, 'session.json')
-    if (!(await exists(sessionFile))) return null
+    const configDir = await getConfigDir()
+    const configFile = await join(configDir, 'config.json')
+    if (!(await exists(configFile))) return null
 
-    const raw = await readTextFile(sessionFile)
+    const raw = await readTextFile(configFile)
     const session: SessionData = JSON.parse(raw)
     if (!Array.isArray(session.tabs) || session.tabs.length === 0) return null
 
     const tabs: TabItem[] = []
     for (const meta of session.tabs) {
       let content = ''
-      let isDirty = meta.isDirty
-      const tmpFile = await join(tempDir, `${meta.id}.tmp`)
+      let isDirty = false
+      let lastModified = meta.lastModified ?? null
+      let fileSize = meta.fileSize ?? null
+      const tmpFile = await join(configDir, `${meta.id}.tmp`)
+      const hasTmp = await exists(tmpFile)
 
-      // 核心修正：只要 temp 目录中存在对应的 .tmp 缓存文件，无条件优先加载缓存内容
-      if (await exists(tmpFile)) {
+      if (meta.filePath && (await exists(meta.filePath))) {
+        const currentFp = await getFileFingerprint(meta.filePath)
+        const isFileModifiedExternally =
+          currentFp !== null &&
+          meta.lastModified !== undefined &&
+          meta.lastModified !== null &&
+          (currentFp.mtime !== meta.lastModified || currentFp.size !== meta.fileSize)
+
+        if (isFileModifiedExternally) {
+          content = await readFileSmart(meta.filePath)
+          isDirty = false
+          lastModified = currentFp?.mtime ?? null
+          fileSize = currentFp?.size ?? null
+          if (hasTmp) await removeTabTempFile(meta.id)
+        } else if (hasTmp && meta.isDirty) {
+          content = await readFileSmart(tmpFile)
+          isDirty = true
+        } else {
+          content = await readFileSmart(meta.filePath)
+          isDirty = false
+          lastModified = currentFp?.mtime ?? lastModified
+          fileSize = currentFp?.size ?? fileSize
+          if (hasTmp) await removeTabTempFile(meta.id)
+        }
+      } else if (hasTmp) {
         content = await readFileSmart(tmpFile)
         isDirty = true
-      } else if (meta.filePath && (await exists(meta.filePath))) {
-        content = await readFileSmart(meta.filePath)
-        isDirty = false
       }
 
       tabs.push({
         ...meta,
         isDirty,
+        lastModified,
+        fileSize,
         encoding: meta.encoding || 'UTF-8',
         content,
         isLoading: false,
@@ -170,9 +223,10 @@ export async function loadSessionFromTemp(): Promise<{
       })
     }
 
+    const firstRestored = tabs.slice(0, 1).pop()
     return {
       tabs,
-      activeTab: session.activeTab || tabs[0].id,
+      activeTab: session.activeTab || (firstRestored ? firstRestored.id : ''),
       tabPosition: session.tabPosition || 'top'
     }
   } catch (e) {

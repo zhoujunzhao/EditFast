@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { EditorView, basicSetup } from 'codemirror'
 import { EditorState, Prec, type Extension } from '@codemirror/state'
 import { keymap } from '@codemirror/view'
@@ -17,6 +18,14 @@ import { markdown } from '@codemirror/lang-markdown'
 import { javascript } from '@codemirror/lang-javascript'
 import { json } from '@codemirror/lang-json'
 import { writeText, readText } from '@tauri-apps/plugin-clipboard-manager'
+import { Scissors, CopyIcon, ClipboardPaste } from '@lucide/vue'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuShortcut,
+  ContextMenuTrigger
+} from '@/components/ui/context-menu'
 
 export interface SearchOptions {
   search: string
@@ -35,7 +44,9 @@ const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void
 }>()
 
+const { t } = useI18n()
 const editorContainer = ref<HTMLElement | null>(null)
+const hasSelection = ref(false)
 let view: EditorView | null = null
 
 const LARGE_FILE_LEN = 5 * 1024 * 1024
@@ -51,10 +62,10 @@ const initEditor = () => {
   if (!editorContainer.value) return
   if (view) view.destroy()
 
-  const isLargeFile = props.modelValue.length > LARGE_FILE_LEN
+  const docText = props.modelValue ?? ''
+  const isLargeFile = docText.length > LARGE_FILE_LEN
 
   const extensions: Extension[] = [
-    // 最高优先级拦截 Mod-f / Mod-h，防止弹出 CodeMirror 内置搜索栏，交给外部自定义弹窗处理
     Prec.highest(
         keymap.of([
           { key: 'Mod-f', run: () => false, preventDefault: true },
@@ -82,31 +93,47 @@ const initEditor = () => {
     })
   ]
 
-  const state = EditorState.create({
-    doc: props.modelValue,
-    extensions
-  })
-
   view = new EditorView({
-    state,
+    state: EditorState.create({
+      doc: docText,
+      extensions
+    }),
     parent: editorContainer.value
   })
 }
 
-onMounted(() => initEditor())
+onMounted(() => {
+  initEditor()
+})
+
 onBeforeUnmount(() => view?.destroy())
 
-watch(() => props.modelValue, (newVal) => {
-  if (view && newVal !== view.state.doc.toString()) {
-    if (view.state.doc.length === 0 && newVal.length > LARGE_FILE_LEN) {
-      initEditor()
-      return
-    }
-    view.dispatch({
-      changes: { from: 0, to: view.state.doc.length, insert: newVal }
-    })
+watch(
+    () => props.modelValue,
+    (newVal) => {
+      const safeVal = newVal ?? ''
+      if (!view) {
+        initEditor()
+        return
+      }
+      if (safeVal !== view.state.doc.toString()) {
+        if (view.state.doc.length === 0 && safeVal.length > LARGE_FILE_LEN) {
+          initEditor()
+          return
+        }
+        view.dispatch({
+          changes: { from: 0, to: view.state.doc.length, insert: safeVal }
+        })
+      }
+    },
+    { flush: 'post' }
+)
+
+const refreshLayout = () => {
+  if (view) {
+    view.requestMeasure()
   }
-})
+}
 
 const undo = () => { if (view) { cmUndo(view); view.focus() } }
 const redo = () => { if (view) { cmRedo(view); view.focus() } }
@@ -115,6 +142,13 @@ const getSelectedText = () => {
   if (!view) return ''
   const { from, to } = view.state.selection.main
   return view.state.sliceDoc(from, to)
+}
+
+const handleContextMenuOpen = (isOpen: boolean) => {
+  if (isOpen && view) {
+    const { from, to } = view.state.selection.main
+    hasSelection.value = from !== to
+  }
 }
 
 const copy = async () => {
@@ -213,23 +247,36 @@ const clearSearch = () => {
 }
 
 defineExpose({
-  undo,
-  redo,
-  cut,
-  copy,
-  paste,
-  getSelectedText,
-  syncSearchQuery,
-  execFindNext,
-  execFindPrev,
-  execReplaceOne,
-  execReplaceAll,
-  clearSearch
+  undo, redo, cut, copy, paste,
+  getSelectedText, refreshLayout, syncSearchQuery,
+  execFindNext, execFindPrev, execReplaceOne, execReplaceAll, clearSearch
 })
 </script>
 
 <template>
-  <div ref="editorContainer" class="h-full w-full overflow-hidden bg-background" />
+  <ContextMenu @update:open="handleContextMenuOpen">
+    <ContextMenuTrigger class="block h-full w-full overflow-hidden">
+      <div ref="editorContainer" class="h-full w-full overflow-hidden bg-background select-text" />
+    </ContextMenuTrigger>
+
+    <ContextMenuContent class="w-40 rounded-none">
+      <ContextMenuItem class="rounded-none text-xs" :disabled="!hasSelection" @click="cut">
+        <Scissors class="h-3.5 w-3.5" />
+        <span>{{ t('topMenu.edit.cut') }}</span>
+        <ContextMenuShortcut>Ctrl+X</ContextMenuShortcut>
+      </ContextMenuItem>
+      <ContextMenuItem class="rounded-none text-xs" :disabled="!hasSelection" @click="copy">
+        <CopyIcon class="h-3.5 w-3.5" />
+        <span>{{ t('topMenu.edit.copy') }}</span>
+        <ContextMenuShortcut>Ctrl+C</ContextMenuShortcut>
+      </ContextMenuItem>
+      <ContextMenuItem class="rounded-none text-xs" @click="paste">
+        <ClipboardPaste class="h-3.5 w-3.5" />
+        <span>{{ t('topMenu.edit.paste') }}</span>
+        <ContextMenuShortcut>Ctrl+V</ContextMenuShortcut>
+      </ContextMenuItem>
+    </ContextMenuContent>
+  </ContextMenu>
 </template>
 
 <style scoped>

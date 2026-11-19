@@ -35,6 +35,27 @@
     "code": {
       "self": "编码"
     },
+    "tools": {
+      "self": "工具",
+      "formatJson": "JSON 格式化",
+      "minifyJson": "JSON 压缩",
+      "invalidJson": "当前内容不是有效的 JSON 格式：\n{error}",
+      "base64Tool": "Base64 编解码...",
+      "urlTool": "URL 编解码...",
+      "codecTitle": "编解码小工具",
+      "base64Tab": "Base64 编解码",
+      "urlTab": "URL 编解码",
+      "inputPlaceholder": "在此输入原始文本，或粘贴需要解码的字符串...",
+      "outputPlaceholder": "转换结果将显示在这里...",
+      "encode": "编码 →",
+      "decode": "← 解码",
+      "swap": "上下交换",
+      "copyResult": "复制结果",
+      "copied": "已复制",
+      "clear": "清空",
+      "invalidBase64": "Base64 解码失败：输入格式不正确",
+      "invalidUrl": "URL 解码失败：包含无效的编码序列"
+    },
     "lang": {
       "self": "语言"
     },
