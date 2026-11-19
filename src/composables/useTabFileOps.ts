@@ -76,62 +76,71 @@ export function useTabFileOps(
     const cachedMatch = await deps.resolveCachedContentIfValid(selected, currentFp)
     const newTabId = cachedMatch?.reusedTabId || `tab-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 
-    let loadedContent = ''
-    let loadedDirty = false
-
-    try {
-      if (cachedMatch) {
-        loadedContent = cachedMatch.content
-        loadedDirty = true
-      } else {
-        loadedContent = await readFileSmart(selected)
-        loadedDirty = false
-      }
-    } catch (e: any) {
-      console.error('读取文件失败:', selected, e)
-      await message(`读取文件失败 (${selected}):\n${e?.message || String(e)}`, { kind: 'error' })
-      return
-    }
-
-    const newTabPayload: TabItem = {
+    // 1. 先创建处于 loading 状态的标签页并立即展示进度条
+    const placeholderTab: TabItem = {
       id: newTabId,
       title: fileName,
       filePath: selected,
-      content: loadedContent,
-      isDirty: loadedDirty,
+      content: '',
+      isDirty: false,
       encoding: 'UTF-8',
       lastModified: currentFp?.mtime ?? null,
       fileSize: currentFp?.size ?? null,
-      isLoading: false,
-      loadProgress: 100
+      isLoading: !cachedMatch,
+      loadProgress: cachedMatch ? 100 : 0
     }
 
     const firstTab = tabs.value.slice(0, 1).pop()
-    if (
+    const replacedEmptyTab = Boolean(
       tabs.value.length === 1 &&
       firstTab &&
       !firstTab.filePath &&
       !firstTab.isDirty &&
       firstTab.content === ''
-    ) {
-      await removeTabTempFile(firstTab.id)
-      tabs.value.splice(0, 1, newTabPayload)
-    } else {
-      tabs.value.push(newTabPayload)
-    }
+    )
 
-    if (!loadedDirty) {
-      await removeTabTempFile(newTabId)
+    if (replacedEmptyTab && firstTab) {
+      await removeTabTempFile(firstTab.id)
+      tabs.value.splice(0, 1, placeholderTab)
+    } else {
+      tabs.value.push(placeholderTab)
     }
 
     activeTab.value = newTabId
-    await deps.syncSession()
 
+    // 必须通过 tabs.value.find 获取 Vue 响应式代理对象，更新进度才会触发视图刷新
     const reactiveTab = tabs.value.find(item => item.id === newTabId)
-    if (reactiveTab) {
-      bindFileWatcher(reactiveTab)
+    if (!reactiveTab) return
+
+    try {
+      if (cachedMatch) {
+        reactiveTab.content = cachedMatch.content
+        reactiveTab.isDirty = true
+        reactiveTab.isLoading = false
+        reactiveTab.loadProgress = 100
+      } else {
+        const content = await readFileSmart(selected, (percent) => {
+          reactiveTab.loadProgress = percent
+        })
+        reactiveTab.content = content
+        reactiveTab.isDirty = false
+        reactiveTab.loadProgress = 100
+        reactiveTab.isLoading = false
+        await removeTabTempFile(newTabId)
+      }
+    } catch (e: any) {
+      console.error('读取文件失败:', selected, e)
+      // 读取失败时移除占位标签，若原本替换了空标签则恢复一个新空标签
+      const idx = tabs.value.findIndex(item => item.id === newTabId)
+      if (idx !== -1) tabs.value.splice(idx, 1)
+      await message(`读取文件失败 (${selected}):\n${e?.message || String(e)}`, { kind: 'error' })
+      return
     }
+
+    await deps.syncSession()
+    bindFileWatcher(reactiveTab)
   }
+
 
   const openQueue = Array<string>()
   let isOpeningQueue = false
