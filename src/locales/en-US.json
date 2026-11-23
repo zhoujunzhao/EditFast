@@ -96,7 +96,9 @@
     "closeCurrent": "Close",
     "closeOthers": "Close Others",
     "closeRight": "Close to the Right",
-    "closeAll": "Close All"
+    "closeAll": "Close All",
+    "pinTab": "Pin Tab",
+    "unpinTab": "Unpin Tab"
   },
   "dialog": {
     "unsavedTitle": "Unsaved Changes",

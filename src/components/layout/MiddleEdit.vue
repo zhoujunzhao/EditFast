@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {nextTick, ref, watch} from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, X, ArrowUpDown, Loader2 } from '@lucide/vue'
+import { Plus, X, ArrowUpDown, Loader2, Pin, PinOff} from '@lucide/vue'
 import CodeEditor, { type SearchOptions } from '@/components/layout/CodeEditor.vue'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
@@ -20,9 +20,9 @@ const { t } = useI18n()
 const {
   tabs, activeTab, tabPosition, currentTab, hasDirtyTabs,
   syncSession, addTab, openFile, saveActiveFile, saveActiveFileAs,
-  saveAllFiles, setActiveEncoding, removeTab, closeOtherTabs, closeRightTabs, closeAllTabs,
+  saveAllFiles, setActiveEncoding, removeTab, closeOtherTabs, closeRightTabs, closeAllTabs,togglePinTab,
   togglePosition, handleContentChange, flushAllCaches, handleDroppedPaths, moveTab,
-  formatActiveJson, minifyActiveJson
+  formatActiveJson, minifyActiveJson, setWindowState
 } = useEditorTabs()
 
 // 基于 Pointer 坐标的标签拖拽排序
@@ -130,7 +130,8 @@ defineExpose({
   undoActive, redoActive, cutActive, copyActive, pasteActive,
   getActiveSelectedText, syncSearchQuery, execFindNext, execFindPrev,
   execReplaceOne, execReplaceAll, clearSearch,
-  setActiveEncoding, flushAllCaches, handleDroppedPaths, formatActiveJson, minifyActiveJson
+  setActiveEncoding, flushAllCaches, handleDroppedPaths, formatActiveJson, minifyActiveJson,
+  setWindowState
 })
 
 watch(activeTab, async (newId) => {
@@ -170,39 +171,55 @@ watch(activeTab, async (newId) => {
                   :data-tab-index="index"
                   @pointerdown="handleTabPointerDown(index, $event)"
                   :class="[
-                  isDraggingTab && draggingIndex === index ? 'opacity-40 cursor-grabbing' : '',
-                  isDraggingTab && dragOverIndex === index && draggingIndex !== index ? 'border-l-2 border-l-primary bg-accent/60' : ''
-                ]"
+               isDraggingTab && draggingIndex === index ? 'opacity-40 cursor-grabbing' : '',
+               isDraggingTab && dragOverIndex === index && draggingIndex !== index ? 'border-l-2 border-l-primary bg-accent/60' : ''
+             ]"
                   class="w-full h-8 px-3 rounded-none border-r border-b border-border/60 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-none flex items-center justify-between gap-2 text-xs overflow-hidden transition-opacity"
               >
-                <span class="truncate pointer-events-none">
-                  {{ tab.title }}<span v-if="tab.isDirty" class="ml-1 text-primary">•</span>
-                </span>
+             <span class="truncate pointer-events-none">
+               {{ tab.title }}<span v-if="tab.isDirty" class="ml-1 text-primary">•</span>
+             </span>
+
+                <!-- 固定标签显示图钉图标，普通标签显示关闭按钮 -->
                 <span
+                    v-if="tab.pinned"
+                    :title="t('tabs.unpinTab')"
+                    class="shrink-0 p-0.5 text-primary/80 pointer-events-none"
+                >
+               <Pin class="w-3 h-3 rotate-45" />
+             </span>
+                <span
+                    v-else
                     data-close-btn
                     role="button"
                     :title="t('tabs.closeTab')"
                     class="shrink-0 p-0.5 rounded-none opacity-60 hover:opacity-100 hover:bg-muted-foreground/20"
                     @click.stop="removeTab(tab.id, $event)"
                 >
-                  <X class="w-3 h-3" />
-                </span>
+               <X class="w-3 h-3" />
+             </span>
               </TabsTrigger>
             </ContextMenuTrigger>
 
             <ContextMenuContent class="w-44 rounded-none">
-              <ContextMenuItem class="rounded-none text-xs" @click="removeTab(tab.id)">
+              <ContextMenuItem class="rounded-none text-xs" :disabled="!!tab.pinned" @click="removeTab(tab.id)">
                 {{ t('tabs.closeCurrent') }}
               </ContextMenuItem>
-              <ContextMenuItem class="rounded-none text-xs" :disabled="tabs.length <= 1" @click="closeOtherTabs(tab.id)">
+              <ContextMenuItem class="rounded-none text-xs" :disabled="tabs.filter(item => !item.pinned && item.id !== tab.id).length === 0" @click="closeOtherTabs(tab.id)">
                 {{ t('tabs.closeOthers') }}
               </ContextMenuItem>
-              <ContextMenuItem class="rounded-none text-xs" :disabled="index >= tabs.length - 1" @click="closeRightTabs(tab.id)">
+              <ContextMenuItem class="rounded-none text-xs" :disabled="tabs.slice(index + 1).filter(item => !item.pinned).length === 0" @click="closeRightTabs(tab.id)">
                 {{ t('tabs.closeRight') }}
               </ContextMenuItem>
               <ContextMenuSeparator />
-              <ContextMenuItem class="rounded-none text-xs" @click="closeAllTabs()">
+              <ContextMenuItem class="rounded-none text-xs" :disabled="tabs.filter(item => !item.pinned).length === 0" @click="closeAllTabs()">
                 {{ t('tabs.closeAll') }}
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+              <ContextMenuItem class="rounded-none text-xs" @click="togglePinTab(tab.id)">
+                <PinOff v-if="tab.pinned" class="h-3.5 w-3.5" />
+                <Pin v-else class="h-3.5 w-3.5" />
+                <span>{{ tab.pinned ? t('tabs.unpinTab') : t('tabs.pinTab') }}</span>
               </ContextMenuItem>
             </ContextMenuContent>
           </ContextMenu>

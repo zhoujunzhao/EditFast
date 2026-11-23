@@ -93,22 +93,90 @@ const handleKeydown = (e: KeyboardEvent) => {
 
 let unlistenClose: (() => void) | null = null
 let unlistenDragDrop: (() => void) | null = null
+let unlistenWindowResize: (() => void) | null = null
+let resizeSaveTimer: ReturnType<typeof setTimeout> | null = null
+let lastNormalSize = { width: 1024, height: 768 }
 let isClosing = false
+
+const captureAndSaveWindowSize = async () => {
+  try {
+    const appWindow = getCurrentWindow()
+    const isMin = await appWindow.isMinimized()
+    if (isMin) return
+
+    const isMax = await appWindow.isMaximized()
+    if (isMax) {
+      await middleEditRef.value?.setWindowState({
+        width: lastNormalSize.width,
+        height: lastNormalSize.height,
+        maximized: true
+      })
+      return
+    }
+
+    const scale = await appWindow.scaleFactor()
+    const physical = await appWindow.innerSize()
+    const logical = physical.toLogical(scale)
+    const w = Math.round(logical.width)
+    const h = Math.round(logical.height)
+
+    if (w >= 400 && h >= 300) {
+      lastNormalSize = { width: w, height: h }
+      await middleEditRef.value?.setWindowState({
+        width: w,
+        height: h,
+        maximized: false
+      })
+    }
+  } catch (e) {
+    console.error('保存窗口大小失败:', e)
+  }
+}
 
 onMounted(async () => {
   window.addEventListener('keydown', handleKeydown, true)
 
   const appWindow = getCurrentWindow()
+
+  try {
+    const isMax = await appWindow.isMaximized()
+    if (!isMax) {
+      const scale = await appWindow.scaleFactor()
+      const physical = await appWindow.innerSize()
+      const logical = physical.toLogical(scale)
+      if (logical.width >= 400 && logical.height >= 300) {
+        lastNormalSize = {
+          width: Math.round(logical.width),
+          height: Math.round(logical.height)
+        }
+      }
+    }
+  } catch {
+    // 忽略初始化读取异常
+  }
+
+  unlistenWindowResize = await appWindow.onResized(() => {
+    if (resizeSaveTimer) clearTimeout(resizeSaveTimer)
+    resizeSaveTimer = setTimeout(() => {
+      resizeSaveTimer = null
+      void captureAndSaveWindowSize()
+    }, 400)
+  })
+
   unlistenClose = await appWindow.onCloseRequested(async (event) => {
     if (isClosing) return
     event.preventDefault()
     isClosing = true
     try {
+      if (resizeSaveTimer) {
+        clearTimeout(resizeSaveTimer)
+        resizeSaveTimer = null
+        await captureAndSaveWindowSize()
+      }
       await middleEditRef.value?.flushAllCaches()
     } finally {
       await appWindow.destroy()
     }
-
   })
 
   const webview = getCurrentWebview()
@@ -130,6 +198,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown, true)
+  if (resizeSaveTimer) clearTimeout(resizeSaveTimer)
+  if (unlistenWindowResize) unlistenWindowResize()
   if (unlistenClose) unlistenClose()
   if (unlistenDragDrop) unlistenDragDrop()
 })

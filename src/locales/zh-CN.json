@@ -96,7 +96,9 @@
     "closeCurrent": "关闭当前",
     "closeOthers": "关闭其他标签",
     "closeRight": "关闭右侧标签",
-    "closeAll": "关闭全部标签"
+    "closeAll": "关闭全部标签",
+    "pinTab": "固定标签",
+    "unpinTab": "取消固定"
   },
   "dialog": {
     "unsavedTitle": "未保存的更改",

@@ -36,6 +36,23 @@ export function useEditorTabs() {
     await session.syncSession()
   }
 
+  const togglePinTab = async (targetId: string) => {
+    const index = tabs.value.findIndex(item => item.id === targetId)
+    if (index === -1) return
+
+    const target = tabs.value[index]
+    const nextPinned = !target.pinned
+    target.pinned = nextPinned
+
+    // 重新调整位置：固定标签集中放在最左侧，取消固定则放到固定区末尾
+    const [removed] = tabs.value.splice(index, 1)
+    if (removed) {
+      const pinnedCount = tabs.value.filter(t => t.pinned).length
+      tabs.value.splice(pinnedCount, 0, removed)
+    }
+    await session.syncSession()
+  }
+
   const moveTab = async (fromIndex: number, toIndex: number) => {
     if (
       fromIndex === toIndex ||
@@ -46,6 +63,13 @@ export function useEditorTabs() {
     ) {
       return
     }
+
+    const fromTab = tabs.value[fromIndex]
+    const toTab = tabs.value[toIndex]
+    if (!fromTab || !toTab || Boolean(fromTab.pinned) !== Boolean(toTab.pinned)) {
+      return
+    }
+
     const movedItem = tabs.value.splice(fromIndex, 1)[0]
     if (movedItem) {
       tabs.value.splice(toIndex, 0, movedItem)
@@ -59,7 +83,8 @@ export function useEditorTabs() {
     if (index === -1) return
 
     const targetTab = tabs.value[index]
-    if (!targetTab) return
+    // 固定的标签不允许关闭
+    if (!targetTab || targetTab.pinned) return
 
     if (targetTab.isDirty) {
       const saveLabel = t('dialog.save')
@@ -95,16 +120,20 @@ export function useEditorTabs() {
 
   const closeOtherTabs = async (targetId: string) => {
     activeTab.value = targetId
-    await closeTabsBatch(tabs.value.filter(t => t.id !== targetId).map(t => t.id))
+    await closeTabsBatch(
+      tabs.value.filter(t => t.id !== targetId && !t.pinned).map(t => t.id)
+    )
   }
 
   const closeRightTabs = async (targetId: string) => {
     const index = tabs.value.findIndex(t => t.id === targetId)
     if (index === -1 || index >= tabs.value.length - 1) return
-    await closeTabsBatch(tabs.value.slice(index + 1).map(t => t.id))
+    await closeTabsBatch(
+      tabs.value.slice(index + 1).filter(t => !t.pinned).map(t => t.id)
+    )
   }
 
-  const closeAllTabs = async () => closeTabsBatch(tabs.value.map(t => t.id))
+  const closeAllTabs = async () => closeTabsBatch(tabs.value.filter(t => !t.pinned).map(t => t.id))
 
   const setActiveEncoding = async (encoding: string) => {
     if (!currentTab.value) return
@@ -136,6 +165,9 @@ export function useEditorTabs() {
       tabs.value = cached.tabs
       activeTab.value = cached.activeTab
       tabPosition.value = cached.tabPosition
+      if (cached.windowState) {
+        session.windowState.value = cached.windowState
+      }
       tabs.value.forEach(fileOps.bindFileWatcher)
     } else {
       await addTab()
@@ -166,6 +198,7 @@ export function useEditorTabs() {
     tabs, activeTab, tabPosition, currentTab, hasDirtyTabs,
     syncSession: session.syncSession,
     flushAllCaches: session.flushAllCaches,
+    setWindowState: session.setWindowState,
     openFile: fileOps.openFile,
     handleDroppedPaths: fileOps.handleDroppedPaths,
     saveActiveFile: fileOps.saveActiveFile,
@@ -174,7 +207,7 @@ export function useEditorTabs() {
     formatActiveJson: fileOps.formatActiveJson,
     minifyActiveJson: fileOps.minifyActiveJson,
     addTab, moveTab, removeTab,
-    closeOtherTabs, closeRightTabs, closeAllTabs,
+    closeOtherTabs, closeRightTabs, closeAllTabs,togglePinTab,
     setActiveEncoding, togglePosition, handleContentChange
   }
 }

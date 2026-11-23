@@ -1,8 +1,8 @@
 use std::path::Path;
 use std::sync::Mutex;
-use tauri::{Emitter, Manager, State};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
+use tauri::{LogicalSize, Manager, Size, State};
 
 // 保存通过系统右键菜单首次启动时传入的所有文件路径
 struct LaunchFilesState(Mutex<Vec<String>>);
@@ -12,6 +12,36 @@ fn extract_valid_files(args: impl Iterator<Item = String>) -> Vec<String> {
         .filter(|arg| !arg.starts_with('-') && Path::new(arg).is_file())
         .collect()
 }
+
+fn restore_window_size(app: &tauri::App) {
+    let Ok(exe_dir) = get_exe_dir() else { return };
+    let config_file = Path::new(&exe_dir).join("config").join("config.json");
+
+    let Ok(content) = std::fs::read_to_string(config_file) else { return };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) else { return };
+
+    let Some(win_state) = json.get("windowState") else { return };
+    let Some(window) = app.get_webview_window("main") else { return };
+
+    if let (Some(w), Some(h)) = (
+        win_state.get("width").and_then(|v| v.as_f64()),
+        win_state.get("height").and_then(|v| v.as_f64()),
+    ) {
+        if w >= 400.0 && h >= 300.0 {
+            let _ = window.set_size(Size::Logical(LogicalSize::new(w, h)));
+            let _ = window.center();
+        }
+    }
+
+    if win_state
+        .get("maximized")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        let _ = window.maximize();
+    }
+}
+
 
 #[tauri::command]
 fn get_exe_dir() -> Result<String, String> {
@@ -88,20 +118,35 @@ fn toggle_windows_context_menu(enable: bool, menu_title: String) -> Result<bool,
 pub fn run() {
     let initial_files = extract_valid_files(std::env::args());
 
-    tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.set_focus();
-            }
+    #[allow(unused_mut)] let mut builder = tauri::Builder::default();
+
+    // 仅在非调试模式（Release 发布版）下启用单实例限制；调试模式允许多实例共存
+    #[cfg(all(
+        not(debug_assertions),
+        not(any(target_os = "android", target_os = "ios"))
+    ))]
+    {
+        use tauri::Emitter;
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             // 提取二次启动（或多选文件逐个触发）传入的所有有效文件路径
-            let files = extract_valid_files(args.into_iter());
+            let files = extract_valid_files(args.into_iter().skip(1));
             if !files.is_empty() {
                 let _ = app.emit("single-instance-open", files);
             }
-        }))
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }));
+    }
+
+    builder
         .manage(LaunchFilesState(Mutex::new(initial_files)))
         .setup(move |app| {
+
+            restore_window_size(app);
+
             // region 托盘
             let quit_i = MenuItem::with_id(app, "tray-quit", "退出", true, None::<&str>).unwrap();
             let menu = Menu::with_id_and_items(app, "tray-menu", &[&quit_i]).unwrap();
@@ -139,6 +184,7 @@ pub fn run() {
                 })
                 .build(app)?;
             // endregion 托盘
+
             Ok(())
         })
         .plugin(tauri_plugin_fs::init())

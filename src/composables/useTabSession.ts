@@ -1,4 +1,4 @@
-import type { Ref } from 'vue'
+import {ref, Ref} from 'vue'
 import { exists, readTextFile } from '@tauri-apps/plugin-fs'
 import { join } from '@tauri-apps/api/path'
 import {
@@ -12,17 +12,29 @@ import {
   writeTabTempImmediate
 } from '@/utils/tabCache'
 
+import type { WindowState } from '@/utils/tabCache'
+
+
 export function useTabSession(
   tabs: Ref<TabItem[]>,
   activeTab: Ref<string>,
   tabPosition: Ref<'top' | 'bottom'>
 ) {
+
+  const windowState = ref<WindowState | undefined>(undefined)
+
+  const setWindowState = async (state: WindowState) => {
+    windowState.value = state
+    await syncSession()
+  }
+
   const syncSession = async () => {
     try {
       await writeSessionFile({
         activeTab: activeTab.value,
         tabPosition: tabPosition.value,
-        tabs: tabs.value.map(({ content, isLoading, loadProgress, ...meta }) => meta)
+        tabs: tabs.value.map(({ content, isLoading, loadProgress, ...meta }) => meta),
+        windowState: windowState.value
       })
     } catch (e) {
       console.error('同步配置文件失败:', e)
@@ -93,6 +105,8 @@ export function useTabSession(
     syncSession,
     cacheTabImmediately,
     flushAllCaches,
-    resolveCachedContentIfValid
+    resolveCachedContentIfValid,
+    windowState,
+    setWindowState
   }
 }

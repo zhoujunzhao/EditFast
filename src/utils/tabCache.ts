@@ -18,15 +18,23 @@ export interface TabItem {
   content: string
   isDirty: boolean
   encoding: string
+  pinned?: boolean
   lastModified?: number | null
   fileSize?: number | null
   isLoading?: boolean
   loadProgress?: number
 }
 
+export interface WindowState {
+  width: number
+  height: number
+  maximized?: boolean
+}
+
 export interface SessionData {
   activeTab: string
   tabPosition: 'top' | 'bottom'
+  windowState?: WindowState
   tabs: Omit<TabItem, 'content' | 'isLoading' | 'loadProgress'>[]
 }
 
@@ -163,6 +171,7 @@ export async function loadSessionFromTemp(): Promise<{
   tabs: TabItem[]
   activeTab: string
   tabPosition: 'top' | 'bottom'
+  windowState?: WindowState
 } | null> {
   try {
     const configDir = await getConfigDir()
@@ -227,10 +236,13 @@ export async function loadSessionFromTemp(): Promise<{
     return {
       tabs,
       activeTab: session.activeTab || (firstRestored ? firstRestored.id : ''),
-      tabPosition: session.tabPosition || 'top'
+      tabPosition: session.tabPosition || 'top',
+      windowState: session.windowState
     }
   } catch (e) {
     console.error('读取临时缓存失败:', e)
     return null
   }
 }
+
+
