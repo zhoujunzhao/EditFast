@@ -82,8 +82,13 @@ const initEditor = () => {
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
       },
       '.cm-gutters': {
-        backgroundColor: 'transparent',
-        borderRight: '1px solid hsl(var(--border))'
+        backgroundColor: 'var(--background)',
+        color: 'var(--muted-foreground)',
+        borderRight: '1px solid var(--border)',
+        zIndex: '1'
+      },
+      '.cm-activeLineGutter': {
+        backgroundColor: 'var(--muted)'
       }
     }),
     EditorView.updateListener.of((update) => {
@@ -280,6 +285,4 @@ defineExpose({
 </template>
 
 <style scoped>
-:deep(.cm-editor) { height: 100%; }
-:deep(.cm-scroller) { overflow: auto; }
 </style>

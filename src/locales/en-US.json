@@ -98,7 +98,8 @@
     "closeRight": "Close to the Right",
     "closeAll": "Close All",
     "pinTab": "Pin Tab",
-    "unpinTab": "Unpin Tab"
+    "unpinTab": "Unpin Tab",
+    "copyFullPath": "Copy Full Path"
   },
   "dialog": {
     "unsavedTitle": "Unsaved Changes",

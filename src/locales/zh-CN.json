@@ -98,7 +98,8 @@
     "closeRight": "关闭右侧标签",
     "closeAll": "关闭全部标签",
     "pinTab": "固定标签",
-    "unpinTab": "取消固定"
+    "unpinTab": "取消固定",
+    "copyFullPath": "复制完整路径"
   },
   "dialog": {
     "unsavedTitle": "未保存的更改",

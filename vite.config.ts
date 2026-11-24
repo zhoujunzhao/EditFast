@@ -18,8 +18,9 @@ export default defineConfig(() => ({
       "@": path.resolve(import.meta.dirname, "./src"),
     },
   },
-  // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
-  //
+  build: {
+    chunkSizeWarningLimit: 2000,
+  },
   clearScreen: false,
   server: {
     port: 1420,

@@ -1,6 +1,6 @@
 [package]
 name = "EditFast"
-version = "0.1.0"
+version = "0.1.1"
 description = "就是一个记事本，简简单单。"
 authors = ["Wenda"]
 edition = "2024"

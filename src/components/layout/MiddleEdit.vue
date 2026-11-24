@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import {nextTick, ref, watch} from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, X, ArrowUpDown, Loader2, Pin, PinOff} from '@lucide/vue'
+import { Plus, X, ArrowUpDown, Loader2, Pin, PinOff, Copy} from '@lucide/vue'
 import CodeEditor, { type SearchOptions } from '@/components/layout/CodeEditor.vue'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -124,6 +125,15 @@ const onDblClickBlank = (e: MouseEvent) => {
   if (e.target === e.currentTarget) addTab()
 }
 
+const copyTabFilePath = async (filePath: string | null) => {
+  if (!filePath) return
+  try {
+    await writeText(filePath)
+  } catch {
+    await navigator.clipboard.writeText(filePath)
+  }
+}
+
 defineExpose({
   currentTab, hasDirtyTabs, createNewTab: addTab, openFile,
   saveActiveFile, saveActiveFileAs, saveAllFiles,
@@ -169,6 +179,7 @@ watch(activeTab, async (newId) => {
               <TabsTrigger
                   :value="tab.id"
                   :data-tab-index="index"
+                  :title="tab.title"
                   @pointerdown="handleTabPointerDown(index, $event)"
                   :class="[
                isDraggingTab && draggingIndex === index ? 'opacity-40 cursor-grabbing' : '',
@@ -211,7 +222,6 @@ watch(activeTab, async (newId) => {
               <ContextMenuItem class="rounded-none text-xs" :disabled="tabs.slice(index + 1).filter(item => !item.pinned).length === 0" @click="closeRightTabs(tab.id)">
                 {{ t('tabs.closeRight') }}
               </ContextMenuItem>
-              <ContextMenuSeparator />
               <ContextMenuItem class="rounded-none text-xs" :disabled="tabs.filter(item => !item.pinned).length === 0" @click="closeAllTabs()">
                 {{ t('tabs.closeAll') }}
               </ContextMenuItem>
@@ -220,6 +230,11 @@ watch(activeTab, async (newId) => {
                 <PinOff v-if="tab.pinned" class="h-3.5 w-3.5" />
                 <Pin v-else class="h-3.5 w-3.5" />
                 <span>{{ tab.pinned ? t('tabs.unpinTab') : t('tabs.pinTab') }}</span>
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+              <ContextMenuItem class="rounded-none text-xs" :disabled="!tab.filePath" @click="copyTabFilePath(tab.filePath)">
+                <Copy class="h-3.5 w-3.5" />
+                <span>{{ t('tabs.copyFullPath') }}</span>
               </ContextMenuItem>
             </ContextMenuContent>
           </ContextMenu>
