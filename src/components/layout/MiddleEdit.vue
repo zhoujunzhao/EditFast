@@ -14,8 +14,8 @@ import {
 } from '@/components/ui/context-menu'
 import { useEditorTabs } from '@/composables/useEditorTabs'
 
-const MIN_TAB_WIDTH = 100
-const MAX_TAB_WIDTH = 160
+const MIN_TAB_WIDTH = 60
+const MAX_TAB_WIDTH = 120
 const { t } = useI18n()
 
 const {

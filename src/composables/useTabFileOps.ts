@@ -1,16 +1,11 @@
-import type { Ref } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { basename } from '@tauri-apps/api/path'
-import { writeTextFile } from '@tauri-apps/plugin-fs'
-import { ask, message, open, save } from '@tauri-apps/plugin-dialog'
-import {
-  getFileFingerprint,
-  readFileSmart,
-  removeTabTempFile,
-  type TabItem
-} from '@/utils/tabCache'
-import { FileWatcherManager } from '@/utils/fileWatcher'
-import { collectDroppedFiles } from '@/utils/fileBatchHelper'
+import type {Ref} from 'vue'
+import {useI18n} from 'vue-i18n'
+import {basename} from '@tauri-apps/api/path'
+import {writeTextFile} from '@tauri-apps/plugin-fs'
+import {ask, message, open, save} from '@tauri-apps/plugin-dialog'
+import {getFileFingerprint, readFileSmart, removeTabTempFile, type TabItem} from '@/utils/tabCache'
+import {FileWatcherManager} from '@/utils/fileWatcher'
+import {collectDroppedFiles} from '@/utils/fileBatchHelper'
 
 export function useTabFileOps(
   tabs: Ref<TabItem[]>,
@@ -34,26 +29,42 @@ export function useTabFileOps(
       const target = tabs.value.find(item => item.id === tab.id)
       if (!target || !target.filePath) return
 
-      if (!target.isDirty) {
-        const latest = await readFileSmart(target.filePath)
-        const fp = await getFileFingerprint(target.filePath)
-        if (latest !== target.content) {
-          target.content = latest
-          target.lastModified = fp?.mtime ?? null
-          target.fileSize = fp?.size ?? null
-          await removeTabTempFile(target.id)
-          await deps.syncSession()
-        }
+      let latest = ''
+      try {
+        latest = await readFileSmart(target.filePath)
+      } catch {
         return
       }
 
+      const fp = await getFileFingerprint(target.filePath)
+
+      // 核心判断：无论当前标签是否有未保存标记，只要磁盘内容与当前编辑器内容完全一致，就直接更新指纹并清理缓存，绝不误弹窗
+      if (latest === target.content) {
+        target.isDirty = false
+        target.lastModified = fp?.mtime ?? null
+        target.fileSize = fp?.size ?? null
+        await removeTabTempFile(target.id)
+        await deps.syncSession()
+        return
+      }
+
+      // 内容确实不同，且当前标签没有未保存修改：静默重载最新内容
+      if (!target.isDirty) {
+        target.content = latest
+        target.lastModified = fp?.mtime ?? null
+        target.fileSize = fp?.size ?? null
+        await removeTabTempFile(target.id)
+        await deps.syncSession()
+        return
+      }
+
+      // 内容确实不同，且当前标签有未保存修改：弹窗询问用户
       const confirmed = await ask(t('dialog.reloadMessage', { title: target.title }), {
         title: t('dialog.reloadTitle'),
         kind: 'warning'
       })
       if (confirmed && target.filePath) {
-        target.content = await readFileSmart(target.filePath)
-        const fp = await getFileFingerprint(target.filePath)
+        target.content = latest
         target.isDirty = false
         target.lastModified = fp?.mtime ?? null
         target.fileSize = fp?.size ?? null
@@ -62,6 +73,7 @@ export function useTabFileOps(
       }
     })
   }
+
 
   const openFileByPath = async (selected: string) => {
     const existing = tabs.value.find(item => item.filePath === selected)
@@ -119,10 +131,9 @@ export function useTabFileOps(
         reactiveTab.isLoading = false
         reactiveTab.loadProgress = 100
       } else {
-        const content = await readFileSmart(selected, (percent) => {
+        reactiveTab.content = await readFileSmart(selected, (percent) => {
           reactiveTab.loadProgress = percent
         })
-        reactiveTab.content = content
         reactiveTab.isDirty = false
         reactiveTab.loadProgress = 100
         reactiveTab.isLoading = false

@@ -129,7 +129,7 @@ pub fn run() {
         use tauri::Emitter;
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             // 提取二次启动（或多选文件逐个触发）传入的所有有效文件路径
-            let files = extract_valid_files(args.into_iter().skip(1));
+            let files = extract_valid_files(args.into_iter());
             if !files.is_empty() {
                 let _ = app.emit("single-instance-open", files);
             }

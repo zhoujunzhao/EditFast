@@ -1,11 +1,11 @@
-import { invoke } from '@tauri-apps/api/core'
-import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import { message } from '@tauri-apps/plugin-dialog'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { loadSessionFromTemp, removeTabTempFile, type TabItem } from '@/utils/tabCache'
-import { useTabSession } from './useTabSession'
-import { useTabFileOps } from './useTabFileOps'
+import {invoke} from '@tauri-apps/api/core'
+import {listen, type UnlistenFn} from '@tauri-apps/api/event'
+import {message} from '@tauri-apps/plugin-dialog'
+import {computed, onMounted, onUnmounted, ref} from 'vue'
+import {useI18n} from 'vue-i18n'
+import {loadSessionFromTemp, removeTabTempFile, type TabItem} from '@/utils/tabCache'
+import {useTabSession} from './useTabSession'
+import {useTabFileOps} from './useTabFileOps'
 
 export function useEditorTabs() {
   const { t } = useI18n()
@@ -41,8 +41,7 @@ export function useEditorTabs() {
     if (index === -1) return
 
     const target = tabs.value[index]
-    const nextPinned = !target.pinned
-    target.pinned = nextPinned
+    target.pinned = !target.pinned
 
     // 重新调整位置：固定标签集中放在最左侧，取消固定则放到固定区末尾
     const [removed] = tabs.value.splice(index, 1)

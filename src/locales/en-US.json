@@ -104,6 +104,8 @@
   "dialog": {
     "unsavedTitle": "Unsaved Changes",
     "unsavedMessage": "Do you want to save changes to \"{title}\"?",
+    "reloadTitle": "File Modified Externally",
+    "reloadMessage": "The file \"{title}\" has been modified outside EditFast. Discard unsaved changes and reload?",
     "save": "Save",
     "dontSave": "Don't Save",
     "cancel": "Cancel",

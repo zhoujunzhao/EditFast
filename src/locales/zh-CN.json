@@ -104,6 +104,8 @@
   "dialog": {
     "unsavedTitle": "未保存的更改",
     "unsavedMessage": "是否将更改保存到 \"{title}\"？",
+    "reloadTitle": "文件已在外部修改",
+    "reloadMessage": "文件 \"{title}\" 已被外部程序修改，是否放弃当前未保存的更改并重新加载？",
     "save": "保存",
     "dontSave": "不保存",
     "cancel": "取消",

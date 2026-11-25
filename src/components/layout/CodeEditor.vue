@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { EditorView, basicSetup } from 'codemirror'
 import { EditorState, Prec, type Extension } from '@codemirror/state'
 import { keymap } from '@codemirror/view'
-import { undo as cmUndo, redo as cmRedo } from '@codemirror/commands'
+import { undo as cmUndo, redo as cmRedo, indentWithTab } from '@codemirror/commands'
 import {
   search,
   SearchQuery,
@@ -72,6 +72,7 @@ const initEditor = () => {
           { key: 'Mod-h', run: () => false, preventDefault: true }
         ])
     ),
+    keymap.of([indentWithTab]),
     basicSetup,
     search({ top: true }),
     ...(isLargeFile ? [] : [...getLanguageExtension(props.fileName), EditorView.lineWrapping]),

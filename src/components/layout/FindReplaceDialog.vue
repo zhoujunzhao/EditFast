@@ -24,6 +24,8 @@ const showReplace = defineModel<boolean>('showReplace', { default: false })
 
 const props = defineProps<{
   initialText?: string
+  triggerKey?: number
+  activeTabId?: string
   matchStat: { current: number; total: number }
 }>()
 
@@ -64,28 +66,41 @@ const form = reactive<SearchOptions>({
   regexp: false
 })
 
+const activateDialog = async () => {
+  // 每次激活时若超出当前窗口范围，自动重置到右上角合适位置
+  if (x.value > winWidth.value - 100 || y.value > winHeight.value - 80) {
+    x.value = Math.max(20, winWidth.value - 410)
+    y.value = 80
+  }
+  if (props.initialText) {
+    form.search = props.initialText
+  }
+  emit('query-change', { ...form })
+  await nextTick()
+  const el = searchInputRef.value?.$el || searchInputRef.value
+  el?.focus()
+  el?.select()
+}
+
 watch(open, async (isOpen) => {
   if (isOpen) {
-    // 每次打开时若超出当前窗口范围，自动重置到右上角合适位置
-    if (x.value > winWidth.value - 100 || y.value > winHeight.value - 80) {
-      x.value = Math.max(20, winWidth.value - 410)
-      y.value = 80
-    }
-    if (props.initialText) {
-      form.search = props.initialText
-    }
-    emit('query-change', { ...form })
-    await nextTick()
-    const el = searchInputRef.value?.$el || searchInputRef.value
-    el?.focus()
-    el?.select()
+    await activateDialog()
   } else {
     emit('close')
   }
 })
 
-watch(form, () => {
+// 当弹窗已打开且用户再次按下 Ctrl+F / Ctrl+H 时，更新选中文本并重新聚焦
+watch(() => props.triggerKey, async () => {
   if (open.value) {
+    await activateDialog()
+  }
+})
+
+// 当弹窗已打开且用户切换了标签页时，自动在新的标签页中执行当前查找
+watch(() => props.activeTabId, async (newTabId) => {
+  if (open.value && newTabId) {
+    await nextTick()
     emit('query-change', { ...form })
   }
 })

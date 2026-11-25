@@ -11,7 +11,7 @@ export class FileWatcherManager {
     this.selfSavingPaths.add(filePath)
     setTimeout(() => {
       this.selfSavingPaths.delete(filePath)
-    }, 400)
+    }, 1000)
   }
 
   isSelfSaving(filePath: string) {

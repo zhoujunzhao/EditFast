@@ -26,6 +26,7 @@ const isDraggingOver = ref(false)
 const searchOpen = ref(false)
 const searchShowReplace = ref(false)
 const searchInitialText = ref('')
+const searchTriggerKey = ref(0)
 const searchMatchStat = ref({ current: 0, total: 0 })
 
 
@@ -41,11 +42,10 @@ const openCodecDialog = (targetMode: 'base64' | 'url') => {
 const openFindDialog = (withReplace = false) => {
   if (!activeTabInfo.value) return
   const selected = middleEditRef.value?.getActiveSelectedText() || ''
-  if (selected && !selected.includes('\n')) {
-    searchInitialText.value = selected
-  }
+  searchInitialText.value = selected && !selected.includes('\n') ? selected : ''
   searchShowReplace.value = withReplace
   searchOpen.value = true
+  searchTriggerKey.value++
 }
 
 const handleSearchQuery = (opts: SearchOptions) => {
@@ -262,6 +262,8 @@ onUnmounted(() => {
         v-model:open="searchOpen"
         v-model:show-replace="searchShowReplace"
         :initial-text="searchInitialText"
+        :trigger-key="searchTriggerKey"
+        :active-tab-id="activeTabInfo?.id || ''"
         :match-stat="searchMatchStat"
         @query-change="handleSearchQuery"
         @find-next="handleFindNext"
