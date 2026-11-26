@@ -1,11 +1,17 @@
-import type {Ref} from 'vue'
-import {useI18n} from 'vue-i18n'
-import {basename} from '@tauri-apps/api/path'
-import {writeTextFile} from '@tauri-apps/plugin-fs'
-import {ask, message, open, save} from '@tauri-apps/plugin-dialog'
-import {getFileFingerprint, readFileSmart, removeTabTempFile, type TabItem} from '@/utils/tabCache'
-import {FileWatcherManager} from '@/utils/fileWatcher'
-import {collectDroppedFiles} from '@/utils/fileBatchHelper'
+import type { Ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { basename } from '@tauri-apps/api/path'
+import { ask, message, open } from '@tauri-apps/plugin-dialog'
+import {
+  getFileFingerprint,
+  readFileSmart,
+  readFileWithEncoding,
+  removeTabTempFile,
+  type TabItem
+} from '@/utils/tabCache'
+import { FileWatcherManager } from '@/utils/fileWatcher'
+import { collectDroppedFiles } from '@/utils/fileBatchHelper'
+import { useTabFileSaver } from './useTabFileSaver'
 
 export function useTabFileOps(
   tabs: Ref<TabItem[]>,
@@ -31,14 +37,13 @@ export function useTabFileOps(
 
       let latest = ''
       try {
-        latest = await readFileSmart(target.filePath)
+        latest = await readFileSmart(target.filePath, undefined, target.encoding)
       } catch {
         return
       }
 
       const fp = await getFileFingerprint(target.filePath)
 
-      // 核心判断：无论当前标签是否有未保存标记，只要磁盘内容与当前编辑器内容完全一致，就直接更新指纹并清理缓存，绝不误弹窗
       if (latest === target.content) {
         target.isDirty = false
         target.lastModified = fp?.mtime ?? null
@@ -48,7 +53,6 @@ export function useTabFileOps(
         return
       }
 
-      // 内容确实不同，且当前标签没有未保存修改：静默重载最新内容
       if (!target.isDirty) {
         target.content = latest
         target.lastModified = fp?.mtime ?? null
@@ -58,7 +62,6 @@ export function useTabFileOps(
         return
       }
 
-      // 内容确实不同，且当前标签有未保存修改：弹窗询问用户
       const confirmed = await ask(t('dialog.reloadMessage', { title: target.title }), {
         title: t('dialog.reloadTitle'),
         kind: 'warning'
@@ -74,7 +77,6 @@ export function useTabFileOps(
     })
   }
 
-
   const openFileByPath = async (selected: string) => {
     const existing = tabs.value.find(item => item.filePath === selected)
     if (existing) {
@@ -88,7 +90,6 @@ export function useTabFileOps(
     const cachedMatch = await deps.resolveCachedContentIfValid(selected, currentFp)
     const newTabId = cachedMatch?.reusedTabId || `tab-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 
-    // 1. 先创建处于 loading 状态的标签页并立即展示进度条
     const placeholderTab: TabItem = {
       id: newTabId,
       title: fileName,
@@ -120,7 +121,6 @@ export function useTabFileOps(
 
     activeTab.value = newTabId
 
-    // 必须通过 tabs.value.find 获取 Vue 响应式代理对象，更新进度才会触发视图刷新
     const reactiveTab = tabs.value.find(item => item.id === newTabId)
     if (!reactiveTab) return
 
@@ -131,9 +131,11 @@ export function useTabFileOps(
         reactiveTab.isLoading = false
         reactiveTab.loadProgress = 100
       } else {
-        reactiveTab.content = await readFileSmart(selected, (percent) => {
+        const res = await readFileWithEncoding(selected, (percent) => {
           reactiveTab.loadProgress = percent
         })
+        reactiveTab.content = res.content
+        reactiveTab.encoding = res.encoding
         reactiveTab.isDirty = false
         reactiveTab.loadProgress = 100
         reactiveTab.isLoading = false
@@ -141,7 +143,6 @@ export function useTabFileOps(
       }
     } catch (e: any) {
       console.error('读取文件失败:', selected, e)
-      // 读取失败时移除占位标签，若原本替换了空标签则恢复一个新空标签
       const idx = tabs.value.findIndex(item => item.id === newTabId)
       if (idx !== -1) tabs.value.splice(idx, 1)
       await message(`读取文件失败 (${selected}):\n${e?.message || String(e)}`, { kind: 'error' })
@@ -151,7 +152,6 @@ export function useTabFileOps(
     await deps.syncSession()
     bindFileWatcher(reactiveTab)
   }
-
 
   const openQueue = Array<string>()
   let isOpeningQueue = false
@@ -193,79 +193,7 @@ export function useTabFileOps(
     if (filesToOpen.length > 0) await enqueueFilesToOpen(filesToOpen)
   }
 
-  const saveTab = async (tab: TabItem): Promise<boolean> => {
-    let targetPath = tab.filePath
-    const isNewPath = !targetPath
-
-    if (!targetPath) {
-      const chosen = await save({ defaultPath: tab.title })
-      if (!chosen) return false
-      targetPath = chosen
-    }
-
-    watcher.markSelfSaving(targetPath)
-    await writeTextFile(targetPath, tab.content)
-
-    const fp = await getFileFingerprint(targetPath)
-    tab.filePath = targetPath
-    tab.title = await basename(targetPath)
-    tab.isDirty = false
-    tab.lastModified = fp?.mtime ?? null
-    tab.fileSize = fp?.size ?? null
-
-    await removeTabTempFile(tab.id)
-    await deps.syncSession()
-    if (isNewPath) bindFileWatcher(tab)
-    return true
-  }
-
-  const saveActiveFile = async () => { if (currentTab.value) await saveTab(currentTab.value) }
-
-  const saveActiveFileAs = async () => {
-    if (!currentTab.value) return
-    const chosen = await save({ defaultPath: currentTab.value.filePath || currentTab.value.title })
-    if (!chosen) return
-
-    watcher.markSelfSaving(chosen)
-    await writeTextFile(chosen, currentTab.value.content)
-
-    const fp = await getFileFingerprint(chosen)
-    currentTab.value.filePath = chosen
-    currentTab.value.title = await basename(chosen)
-    currentTab.value.isDirty = false
-    currentTab.value.lastModified = fp?.mtime ?? null
-    currentTab.value.fileSize = fp?.size ?? null
-
-    await removeTabTempFile(currentTab.value.id)
-    await deps.syncSession()
-    bindFileWatcher(currentTab.value)
-  }
-
-  const saveAllFiles = async () => {
-    for (const tab of tabs.value) {
-      if (tab.isDirty && !(await saveTab(tab))) break
-    }
-  }
-
-  const transformJson = async (pretty: boolean) => {
-    if (!currentTab.value) return
-    const raw = currentTab.value.content.trim()
-    if (!raw) return
-    try {
-      const parsed = JSON.parse(raw)
-      const result = pretty ? JSON.stringify(parsed, null, 2) : JSON.stringify(parsed)
-      if (result !== currentTab.value.content) {
-        currentTab.value.content = result
-        currentTab.value.isDirty = true
-        await deps.cacheTabImmediately(currentTab.value, true)
-      }
-    } catch (e: any) {
-      await message(t('topMenu.tools.invalidJson', { error: e?.message || String(e) }), {
-        title: t(pretty ? 'topMenu.tools.formatJson' : 'topMenu.tools.minifyJson'),
-        kind: 'error'
-      })
-    }
-  }
+  const saverOps = useTabFileSaver(tabs, currentTab, watcher, bindFileWatcher, deps)
 
   return {
     watcher,
@@ -273,11 +201,6 @@ export function useTabFileOps(
     enqueueFilesToOpen,
     openFile,
     handleDroppedPaths,
-    saveTab,
-    saveActiveFile,
-    saveActiveFileAs,
-    saveAllFiles,
-    formatActiveJson: () => transformJson(true),
-    minifyActiveJson: () => transformJson(false)
+    ...saverOps
   }
 }

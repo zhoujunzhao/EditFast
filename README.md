@@ -23,6 +23,8 @@ bun run tauri build
 #### 只为 Windows 打包
 ##### 如果不需要任何安装包，只想得到一个可直接运行的绿色 .exe 文件，使用 --no-bundle 跳过所有打包步骤。
 bun run tauri build --target x86_64-pc-windows-msvc --no-bundle
+或  
+bun run build-windows
 
 ## bun使用  
 • bun install：安装 package.json 中的所有依赖。  
@@ -40,4 +42,7 @@ bun run tauri build --target x86_64-pc-windows-msvc --no-bundle
 
 ## 其他
 1、在 src-tauri 文件夹中运行 cargo update 将获取所有依赖项的最新可用语义兼容版本。  
-2、添加新前端组件 bunx shadcn-vue@latest add button  安装多个时，控件中间用空格隔开。  
+
+2、添加新前端组件 bunx shadcn-vue@latest add button  安装多个时，控件中间用空格隔开。
+
+3、修改版本号 bun run version 0.1.2

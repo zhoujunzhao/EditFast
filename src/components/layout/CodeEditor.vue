@@ -5,15 +5,7 @@ import { EditorView, basicSetup } from 'codemirror'
 import { EditorState, Prec, type Extension } from '@codemirror/state'
 import { keymap } from '@codemirror/view'
 import { undo as cmUndo, redo as cmRedo, indentWithTab } from '@codemirror/commands'
-import {
-  search,
-  SearchQuery,
-  setSearchQuery,
-  findNext,
-  findPrevious,
-  replaceNext,
-  replaceAll
-} from '@codemirror/search'
+import { search } from '@codemirror/search'
 import { markdown } from '@codemirror/lang-markdown'
 import { javascript } from '@codemirror/lang-javascript'
 import { json } from '@codemirror/lang-json'
@@ -26,14 +18,17 @@ import {
   ContextMenuShortcut,
   ContextMenuTrigger
 } from '@/components/ui/context-menu'
+import {
+  type SearchOptions,
+  syncCmSearchQuery,
+  cmFindNext,
+  cmFindPrev,
+  cmReplaceOne,
+  cmReplaceAll,
+  cmClearSearch
+} from '@/utils/cmSearchHelper'
 
-export interface SearchOptions {
-  search: string
-  replace: string
-  caseSensitive: boolean
-  wholeWord: boolean
-  regexp: boolean
-}
+export type { SearchOptions }
 
 const props = defineProps<{
   modelValue: string
@@ -108,10 +103,7 @@ const initEditor = () => {
   })
 }
 
-onMounted(() => {
-  initEditor()
-})
-
+onMounted(() => initEditor())
 onBeforeUnmount(() => view?.destroy())
 
 watch(
@@ -135,12 +127,7 @@ watch(
     { flush: 'post' }
 )
 
-const refreshLayout = () => {
-  if (view) {
-    view.requestMeasure()
-  }
-}
-
+const refreshLayout = () => view?.requestMeasure()
 const undo = () => { if (view) { cmUndo(view); view.focus() } }
 const redo = () => { if (view) { cmRedo(view); view.focus() } }
 
@@ -186,76 +173,16 @@ const paste = async () => {
   }
 }
 
-const syncSearchQuery = (opts: SearchOptions): { current: number; total: number } => {
-  if (!view) return { current: 0, total: 0 }
-
-  const query = new SearchQuery({
-    search: opts.search,
-    replace: opts.replace,
-    caseSensitive: opts.caseSensitive,
-    wholeWord: opts.wholeWord,
-    regexp: opts.regexp
-  })
-
-  view.dispatch({ effects: setSearchQuery.of(query) })
-
-  if (!opts.search || !query.valid) {
-    return { current: 0, total: 0 }
-  }
-
-  let total = 0
-  let current = 0
-  const selFrom = view.state.selection.main.from
-  const cursor = query.getCursor(view.state)
-
-  for (let item = cursor.next(); !item.done; item = cursor.next()) {
-    total++
-    if (item.value.from <= selFrom) {
-      current = total
-    }
-    if (total >= 10000) break
-  }
-
-  return { current, total }
-}
-
-const execFindNext = (opts: SearchOptions) => {
-  if (!view) return { current: 0, total: 0 }
-  syncSearchQuery(opts)
-  findNext(view)
-  return syncSearchQuery(opts)
-}
-
-const execFindPrev = (opts: SearchOptions) => {
-  if (!view) return { current: 0, total: 0 }
-  syncSearchQuery(opts)
-  findPrevious(view)
-  return syncSearchQuery(opts)
-}
-
-const execReplaceOne = (opts: SearchOptions) => {
-  if (!view) return { current: 0, total: 0 }
-  syncSearchQuery(opts)
-  replaceNext(view)
-  return syncSearchQuery(opts)
-}
-
-const execReplaceAll = (opts: SearchOptions) => {
-  if (!view) return { current: 0, total: 0 }
-  syncSearchQuery(opts)
-  replaceAll(view)
-  return syncSearchQuery(opts)
-}
-
-const clearSearch = () => {
-  if (!view) return
-  view.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: '' })) })
-}
-
 defineExpose({
   undo, redo, cut, copy, paste,
-  getSelectedText, refreshLayout, syncSearchQuery,
-  execFindNext, execFindPrev, execReplaceOne, execReplaceAll, clearSearch
+  getSelectedText,
+  refreshLayout,
+  syncSearchQuery: (opts: SearchOptions) => syncCmSearchQuery(view, opts),
+  execFindNext: (opts: SearchOptions) => cmFindNext(view, opts),
+  execFindPrev: (opts: SearchOptions) => cmFindPrev(view, opts),
+  execReplaceOne: (opts: SearchOptions) => cmReplaceOne(view, opts),
+  execReplaceAll: (opts: SearchOptions) => cmReplaceAll(view, opts),
+  clearSearch: () => cmClearSearch(view)
 })
 </script>
 
@@ -284,6 +211,3 @@ defineExpose({
     </ContextMenuContent>
   </ContextMenu>
 </template>
-
-<style scoped>
-</style>

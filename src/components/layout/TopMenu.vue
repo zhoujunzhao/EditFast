@@ -1,18 +1,18 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { getCurrentWindow } from '@tauri-apps/api/window'
 import { message } from '@tauri-apps/plugin-dialog'
 import {
   FileIcon, FolderIcon, InfoIcon, SaveIcon, SettingsIcon,
   RedoIcon, UndoIcon, Scissors, CopyIcon, ClipboardPaste, Search, Replace,
-  Minus, Square, Copy, X, Braces, Minimize2, Binary, Link2
+  Braces, Minimize2, Binary, Link2
 } from '@lucide/vue'
 import {
   Menubar, MenubarCheckboxItem, MenubarContent, MenubarGroup, MenubarItem, MenubarMenu,
   MenubarRadioGroup, MenubarRadioItem, MenubarSeparator, MenubarShortcut, MenubarTrigger
 } from '@/components/ui/menubar'
 import { useI18n } from 'vue-i18n'
+import WindowControls from './WindowControls.vue'
 
 defineProps<{
   currentEncoding: string
@@ -39,22 +39,10 @@ const emit = defineEmits<{
 }>()
 
 const { t, locale } = useI18n()
-const appWindow = getCurrentWindow()
-const isMaximized = ref(false)
-let unlistenResize: (() => void) | null = null
-
-// 检测是否为 Windows 系统
 const isWindows = navigator.userAgent.toLowerCase().includes('windows')
 const hasContextMenu = ref(false)
 
-const updateMaximizedState = async () => {
-  isMaximized.value = await appWindow.isMaximized()
-}
-
 onMounted(async () => {
-  await updateMaximizedState()
-  unlistenResize = await appWindow.onResized(updateMaximizedState)
-
   if (isWindows) {
     try {
       hasContextMenu.value = await invoke<boolean>('check_windows_context_menu')
@@ -64,9 +52,6 @@ onMounted(async () => {
   }
 })
 
-onUnmounted(() => { if (unlistenResize) unlistenResize() })
-
-// 切换添加/移除 Windows 右键菜单
 const handleToggleContextMenu = async (checked: boolean) => {
   try {
     const res = await invoke<boolean>('toggle_windows_context_menu', {
@@ -153,15 +138,14 @@ const switchLang = (lang: 'zh-CN' | 'en-US') => {
         <MenubarTrigger>{{ t('topMenu.code.self') }}</MenubarTrigger>
         <MenubarContent>
           <MenubarRadioGroup :model-value="currentEncoding" @update:model-value="(val: any) => emit('change-encoding', val)">
-            <MenubarRadioItem value="UTF-8">UTF-8</MenubarRadioItem>
-            <MenubarRadioItem value="UTF-16LE">UTF-16 LE</MenubarRadioItem>
-            <MenubarRadioItem value="GBK">GBK</MenubarRadioItem>
-            <MenubarRadioItem value="ASCII">ASCII</MenubarRadioItem>
+            <MenubarRadioItem :disabled="!hasActiveTab" value="UTF-8">UTF-8</MenubarRadioItem>
+            <MenubarRadioItem :disabled="!hasActiveTab" value="UTF-16LE">UTF-16 LE</MenubarRadioItem>
+            <MenubarRadioItem :disabled="!hasActiveTab" value="GBK">GBK</MenubarRadioItem>
+            <MenubarRadioItem :disabled="!hasActiveTab" value="ASCII">ASCII</MenubarRadioItem>
           </MenubarRadioGroup>
         </MenubarContent>
       </MenubarMenu>
 
-      <!-- 工具菜单 -->
       <MenubarMenu>
         <MenubarTrigger>{{ t('topMenu.tools.self') }}</MenubarTrigger>
         <MenubarContent>
@@ -191,7 +175,6 @@ const switchLang = (lang: 'zh-CN' | 'en-US') => {
         </MenubarContent>
       </MenubarMenu>
 
-      <!-- 设置菜单：仅在 Windows 系统显示右键菜单开关 -->
       <MenubarMenu>
         <MenubarTrigger>{{ t('topMenu.setting.self') }}</MenubarTrigger>
         <MenubarContent>
@@ -219,19 +202,6 @@ const switchLang = (lang: 'zh-CN' | 'en-US') => {
       </MenubarMenu>
     </Menubar>
 
-    <div data-tauri-drag-region class="h-full flex-1 cursor-default" @dblclick="appWindow.toggleMaximize()" />
-
-    <div class="flex h-full shrink-0 items-center">
-      <button type="button" :title="t('window.minimize')" class="inline-flex h-full w-11 items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" @click="appWindow.minimize()">
-        <Minus class="h-4 w-4" />
-      </button>
-      <button type="button" :title="isMaximized ? t('window.restore') : t('window.maximize')" class="inline-flex h-full w-11 items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors" @click="appWindow.toggleMaximize()">
-        <Copy v-if="isMaximized" class="h-3.5 w-3.5 rotate-180" />
-        <Square v-else class="h-3.5 w-3.5" />
-      </button>
-      <button type="button" :title="t('window.close')" class="inline-flex h-full w-11 items-center justify-center text-muted-foreground hover:bg-destructive hover:text-destructive-foreground transition-colors" @click="appWindow.close()">
-        <X class="h-4 w-4" />
-      </button>
-    </div>
+    <WindowControls />
   </div>
 </template>

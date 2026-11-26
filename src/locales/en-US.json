@@ -71,6 +71,8 @@
       "title": "About EditFast",
       "desc": "A lightweight and speedy notepad built on Tauri 2+Vue 3.",
       "version": "Version",
+      "author": "Author",
+      "website": "Website",
       "techStack": "Tech Stack",
       "close": "Close"
     }

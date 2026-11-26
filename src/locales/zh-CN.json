@@ -71,6 +71,8 @@
       "title": "关于 EditFast",
       "desc": "基于 Tauri 2 + Vue 3 构建的轻量级极速记事本。",
       "version": "版本",
+      "author": "作者",
+      "website": "官网",
       "techStack": "技术栈",
       "close": "关闭"
     }

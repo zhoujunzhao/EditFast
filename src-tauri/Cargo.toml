@@ -1,6 +1,6 @@
 [package]
 name = "EditFast"
-version = "0.1.1"
+version = "0.1.2"
 description = "就是一个记事本，简简单单。"
 authors = ["Wenda"]
 edition = "2024"
@@ -26,6 +26,8 @@ tauri-plugin-fs = { version = "2", features = ["watch"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-os = "2"
 tauri-plugin-clipboard-manager = "2"
+encoding_rs = "0.8"
+
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"
 

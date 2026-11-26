@@ -1,13 +1,16 @@
 {
   "name": "EditFast",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "version": "bun run scripts/bump-version.ts",
+    "build-windows": "bun run tauri build --target x86_64-pc-windows-msvc --no-bundle"
+
   },
   "dependencies": {
     "@codemirror/lang-javascript": "^6.2.5",
@@ -34,7 +37,8 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.4",
-    "@types/node": "^26.6.6",
+    "@types/bun": "^1.4.5",
+    "@types/node": "^26.6.11",
     "@vitejs/plugin-vue": "^6.0.10",
     "autoprefixer": "^10.6.2",
     "postcss": "^8.5.32",

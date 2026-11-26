@@ -1,11 +1,11 @@
-import {invoke} from '@tauri-apps/api/core'
-import {listen, type UnlistenFn} from '@tauri-apps/api/event'
-import {message} from '@tauri-apps/plugin-dialog'
-import {computed, onMounted, onUnmounted, ref} from 'vue'
-import {useI18n} from 'vue-i18n'
-import {loadSessionFromTemp, removeTabTempFile, type TabItem} from '@/utils/tabCache'
-import {useTabSession} from './useTabSession'
-import {useTabFileOps} from './useTabFileOps'
+import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { message } from '@tauri-apps/plugin-dialog'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { loadSessionFromTemp, removeTabTempFile, type TabItem } from '@/utils/tabCache'
+import { useTabSession } from './useTabSession'
+import { useTabFileOps } from './useTabFileOps'
 
 export function useEditorTabs() {
   const { t } = useI18n()
@@ -20,11 +20,28 @@ export function useEditorTabs() {
   const fileOps = useTabFileOps(tabs, activeTab, currentTab, session)
 
   let counter = 1
+  const getNextUntitledTitle = () => {
+    let maxExisting = 0
+    for (const tab of tabs.value) {
+      const match = tab.title.match(/^(?:未命名|Untitled)-(\d+)\.txt$/i)
+      if (match && match[1]) {
+        const num = Number(match[1])
+        if (!Number.isNaN(num) && num > maxExisting) {
+          maxExisting = num
+        }
+      }
+    }
+    if (counter <= maxExisting) {
+      counter = maxExisting + 1
+    }
+    return t('tabs.untitled', { num: counter++ })
+  }
+
   const addTab = async () => {
     const newId = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
     tabs.value.push({
       id: newId,
-      title: t('tabs.untitled', { num: counter++ }),
+      title: getNextUntitledTitle(),
       content: '',
       filePath: null,
       isDirty: false,
@@ -43,7 +60,6 @@ export function useEditorTabs() {
     const target = tabs.value[index]
     target.pinned = !target.pinned
 
-    // 重新调整位置：固定标签集中放在最左侧，取消固定则放到固定区末尾
     const [removed] = tabs.value.splice(index, 1)
     if (removed) {
       const pinnedCount = tabs.value.filter(t => t.pinned).length
@@ -69,7 +85,7 @@ export function useEditorTabs() {
       return
     }
 
-    const movedItem = tabs.value.splice(fromIndex, 1)[0]
+    const [movedItem] = tabs.value.splice(fromIndex, 1)
     if (movedItem) {
       tabs.value.splice(toIndex, 0, movedItem)
       await session.syncSession()
@@ -82,7 +98,6 @@ export function useEditorTabs() {
     if (index === -1) return
 
     const targetTab = tabs.value[index]
-    // 固定的标签不允许关闭
     if (!targetTab || targetTab.pinned) return
 
     if (targetTab.isDirty) {
@@ -135,10 +150,7 @@ export function useEditorTabs() {
   const closeAllTabs = async () => closeTabsBatch(tabs.value.filter(t => !t.pinned).map(t => t.id))
 
   const setActiveEncoding = async (encoding: string) => {
-    if (!currentTab.value) return
-    currentTab.value.encoding = encoding
-    currentTab.value.isDirty = true
-    await session.cacheTabImmediately(currentTab.value, true)
+    await fileOps.changeTabEncoding(encoding)
   }
 
   const togglePosition = async () => {
@@ -206,7 +218,7 @@ export function useEditorTabs() {
     formatActiveJson: fileOps.formatActiveJson,
     minifyActiveJson: fileOps.minifyActiveJson,
     addTab, moveTab, removeTab,
-    closeOtherTabs, closeRightTabs, closeAllTabs,togglePinTab,
+    closeOtherTabs, closeRightTabs, closeAllTabs, togglePinTab,
     setActiveEncoding, togglePosition, handleContentChange
   }
 }

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { invoke } from '@tauri-apps/api/core'
 import { getVersion } from '@tauri-apps/api/app'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { FileCode2 } from '@lucide/vue'
 import {
   Dialog,
@@ -15,15 +17,27 @@ import { Button } from '@/components/ui/button'
 
 const open = defineModel<boolean>('open', { default: false })
 const { t } = useI18n()
-const appVersion = ref('0.1.0')
+const appVersion = ref('')
+const appAuthors = ref('Wenda')
+const websiteUrl = 'https://github.com/zhoujunzhao/EditFast'
 
 onMounted(async () => {
   try {
     appVersion.value = await getVersion()
+    const authors = await invoke<string>('get_app_authors')
+    if (authors) appAuthors.value = authors
   } catch {
-    // 浏览器预览回退默认版本号
+    // 浏览器预览回退默认值
   }
 })
+
+const handleOpenWebsite = async () => {
+  try {
+    await openUrl(websiteUrl)
+  } catch {
+    window.open(websiteUrl, '_blank')
+  }
+}
 </script>
 
 <template>
@@ -45,6 +59,17 @@ onMounted(async () => {
 
       <div class="py-3 text-xs text-muted-foreground space-y-2 border-y border-border/60">
         <p class="text-foreground leading-relaxed">{{ t('topMenu.about.desc') }}</p>
+        <p>{{ t('topMenu.about.author') }}: {{ appAuthors }}</p>
+        <p class="flex items-center gap-1">
+          <span>{{ t('topMenu.about.website') }}:</span>
+          <a
+              :href="websiteUrl"
+              class="text-primary underline underline-offset-2 hover:opacity-80 cursor-pointer"
+              @click.prevent="handleOpenWebsite"
+          >
+            {{ websiteUrl }}
+          </a>
+        </p>
         <p>{{ t('topMenu.about.techStack') }}: Tauri 2 · Vue 3 · TypeScript · CodeMirror 6 · shadcn-vue</p>
       </div>
 

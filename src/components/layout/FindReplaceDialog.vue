@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { reactive, ref, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useDraggable, useWindowSize } from '@vueuse/core'
 import {
   ArrowDown,
   ArrowUp,
@@ -18,6 +17,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import type { SearchOptions } from './CodeEditor.vue'
+import { useFloatingDrag } from '@/composables/useFloatingDrag'
 
 const open = defineModel<boolean>('open', { default: false })
 const showReplace = defineModel<boolean>('showReplace', { default: false })
@@ -43,20 +43,7 @@ const searchInputRef = ref<any>(null)
 const dialogRef = ref<HTMLElement | null>(null)
 const handleRef = ref<HTMLElement | null>(null)
 
-const { width: winWidth, height: winHeight } = useWindowSize()
-
-// 使用 @vueuse/core 的 useDraggable 实现流畅拖动
-const { x, y } = useDraggable(dialogRef, {
-  handle: handleRef,
-  initialValue: { x: Math.max(20, window.innerWidth - 410), y: 80 },
-  onMove(position) {
-    // 限制拖动边界，防止弹窗完全拖出可视窗口
-    const maxX = Math.max(20, winWidth.value - 380)
-    const maxY = Math.max(40, winHeight.value - 120)
-    position.x = Math.min(Math.max(8, position.x), maxX)
-    position.y = Math.min(Math.max(36, position.y), maxY)
-  }
-})
+const { x, y, ensureInViewport } = useFloatingDrag(dialogRef, handleRef)
 
 const form = reactive<SearchOptions>({
   search: '',
@@ -67,11 +54,7 @@ const form = reactive<SearchOptions>({
 })
 
 const activateDialog = async () => {
-  // 每次激活时若超出当前窗口范围，自动重置到右上角合适位置
-  if (x.value > winWidth.value - 100 || y.value > winHeight.value - 80) {
-    x.value = Math.max(20, winWidth.value - 410)
-    y.value = 80
-  }
+  ensureInViewport()
   if (props.initialText) {
     form.search = props.initialText
   }
@@ -83,21 +66,14 @@ const activateDialog = async () => {
 }
 
 watch(open, async (isOpen) => {
-  if (isOpen) {
-    await activateDialog()
-  } else {
-    emit('close')
-  }
+  if (isOpen) await activateDialog()
+  else emit('close')
 })
 
-// 当弹窗已打开且用户再次按下 Ctrl+F / Ctrl+H 时，更新选中文本并重新聚焦
 watch(() => props.triggerKey, async () => {
-  if (open.value) {
-    await activateDialog()
-  }
+  if (open.value) await activateDialog()
 })
 
-// 当弹窗已打开且用户切换了标签页时，自动在新的标签页中执行当前查找
 watch(() => props.activeTabId, async (newTabId) => {
   if (open.value && newTabId) {
     await nextTick()
@@ -111,11 +87,8 @@ const handleKeydown = (e: KeyboardEvent) => {
     open.value = false
   } else if (e.key === 'Enter') {
     e.preventDefault()
-    if (e.shiftKey) {
-      emit('find-prev', { ...form })
-    } else {
-      emit('find-next', { ...form })
-    }
+    if (e.shiftKey) emit('find-prev', { ...form })
+    else emit('find-next', { ...form })
   }
 }
 </script>
@@ -128,7 +101,6 @@ const handleKeydown = (e: KeyboardEvent) => {
       @keydown="handleKeydown"
       class="fixed z-50 w-95 border border-border bg-background shadow-lg select-none"
   >
-    <!-- 顶部可拖动标题手柄栏 -->
     <div
         ref="handleRef"
         class="flex h-6 w-full cursor-move items-center justify-between border-b border-border/60 bg-muted/60 px-2 text-[11px] text-muted-foreground"
@@ -146,7 +118,6 @@ const handleKeydown = (e: KeyboardEvent) => {
       </button>
     </div>
 
-    <!-- 主体表单区 -->
     <div class="flex items-start gap-1.5 p-2.5">
       <button
           type="button"

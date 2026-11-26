@@ -2,14 +2,16 @@ import { join } from '@tauri-apps/api/path'
 import {
   exists,
   mkdir,
-  open as fsOpen,
-  readFile,
   readTextFile,
   remove,
   stat,
   writeTextFile
 } from '@tauri-apps/plugin-fs'
 import { invoke } from '@tauri-apps/api/core'
+import { normalizeEncodingLabel } from './encodingHelper'
+import { readFileSmart, readFileWithEncoding, writeFileWithEncoding } from './streamReader'
+
+export { normalizeEncodingLabel, readFileSmart, readFileWithEncoding, writeFileWithEncoding }
 
 export interface TabItem {
   id: string
@@ -37,9 +39,6 @@ export interface SessionData {
   windowState?: WindowState
   tabs: Omit<TabItem, 'content' | 'isLoading' | 'loadProgress'>[]
 }
-
-const STREAM_THRESHOLD = 100 * 1024 * 1024
-const CHUNK_SIZE = 4 * 1024 * 1024
 
 export async function getConfigDir() {
   const exeDir = await invoke<string>('get_exe_dir')
@@ -114,53 +113,6 @@ export async function removeTabTempFile(tabId: string) {
   }
 }
 
-function decodeBytesSmart(bytes: Uint8Array): string {
-  try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
-  } catch {
-    return new TextDecoder('gb18030').decode(bytes)
-  }
-}
-
-export async function readFileSmart(
-  filePath: string,
-  onProgress?: (percent: number) => void
-): Promise<string> {
-  const fileStat = await stat(filePath)
-  const totalSize = fileStat.size
-
-  if (totalSize <= STREAM_THRESHOLD) {
-    const bytes = await readFile(filePath)
-    return decodeBytesSmart(bytes)
-  }
-
-  const fileHandle = await fsOpen(filePath, { read: true })
-  const decoder = new TextDecoder('utf-8')
-  const chunks: string[] = []
-  let bytesReadTotal = 0
-
-  try {
-    const buffer = new Uint8Array(CHUNK_SIZE)
-    while (true) {
-      const n = await fileHandle.read(buffer)
-      if (n === null || n === 0) break
-
-      bytesReadTotal += n
-      chunks.push(decoder.decode(buffer.subarray(0, n), { stream: true }))
-
-      if (onProgress && totalSize > 0) {
-        onProgress(Math.min(99, Math.round((bytesReadTotal / totalSize) * 100)))
-      }
-      await new Promise(resolve => setTimeout(resolve, 0))
-    }
-    chunks.push(decoder.decode())
-    if (onProgress) onProgress(100)
-    return chunks.join('')
-  } finally {
-    await fileHandle.close()
-  }
-}
-
 export async function writeSessionFile(data: SessionData) {
   const configDir = await getConfigDir()
   const file = await join(configDir, 'config.json')
@@ -188,6 +140,7 @@ export async function loadSessionFromTemp(): Promise<{
       let isDirty = false
       let lastModified = meta.lastModified ?? null
       let fileSize = meta.fileSize ?? null
+      const savedEncoding = normalizeEncodingLabel(meta.encoding)
       const tmpFile = await join(configDir, `${meta.id}.tmp`)
       const hasTmp = await exists(tmpFile)
 
@@ -200,23 +153,23 @@ export async function loadSessionFromTemp(): Promise<{
           (currentFp.mtime !== meta.lastModified || currentFp.size !== meta.fileSize)
 
         if (isFileModifiedExternally) {
-          content = await readFileSmart(meta.filePath)
+          content = await readFileSmart(meta.filePath, undefined, savedEncoding)
           isDirty = false
           lastModified = currentFp?.mtime ?? null
           fileSize = currentFp?.size ?? null
           if (hasTmp) await removeTabTempFile(meta.id)
         } else if (hasTmp && meta.isDirty) {
-          content = await readFileSmart(tmpFile)
+          content = await readTextFile(tmpFile)
           isDirty = true
         } else {
-          content = await readFileSmart(meta.filePath)
+          content = await readFileSmart(meta.filePath, undefined, savedEncoding)
           isDirty = false
           lastModified = currentFp?.mtime ?? lastModified
           fileSize = currentFp?.size ?? fileSize
           if (hasTmp) await removeTabTempFile(meta.id)
         }
       } else if (hasTmp) {
-        content = await readFileSmart(tmpFile)
+        content = await readTextFile(tmpFile)
         isDirty = true
       }
 
@@ -225,7 +178,7 @@ export async function loadSessionFromTemp(): Promise<{
         isDirty,
         lastModified,
         fileSize,
-        encoding: meta.encoding || 'UTF-8',
+        encoding: savedEncoding,
         content,
         isLoading: false,
         loadProgress: 100
@@ -244,5 +197,3 @@ export async function loadSessionFromTemp(): Promise<{
     return null
   }
 }
-
-
